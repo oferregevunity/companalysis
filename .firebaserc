@@ -1,0 +1,15 @@
+{
+  "projects": {
+    "default": "supersonic-291210"
+  },
+  "targets": {
+    "supersonic-291210": {
+      "hosting": {
+        "companalysis": [
+          "companalysis"
+        ]
+      }
+    }
+  },
+  "etags": {}
+}

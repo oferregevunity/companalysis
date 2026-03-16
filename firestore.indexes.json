@@ -1,0 +1,13 @@
+{
+  "indexes": [
+    {
+      "collectionGroup": "snapshots",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "genreId", "order": "ASCENDING" },
+        { "fieldPath": "month", "order": "ASCENDING" }
+      ]
+    }
+  ],
+  "fieldOverrides": []
+}
