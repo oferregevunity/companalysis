@@ -66,9 +66,11 @@ async function loadGenreAppData(
     }
   }
 
-  // Resolve unknown names from the appNames cache collection
+  // Resolve unknown names from the appNames cache collection.
+  // Apps beyond the 500-metadata-lookup limit get their raw SensorTower ID
+  // as the name (not "Unknown"), so also check if name matches the ID.
   const unknownIds = Array.from(appDataMap.entries())
-    .filter(([, data]) => data.appName === 'Unknown')
+    .filter(([id, data]) => data.appName === 'Unknown' || data.appName === id)
     .map(([id]) => id);
 
   if (unknownIds.length > 0) {
