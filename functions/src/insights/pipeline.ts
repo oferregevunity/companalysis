@@ -15,7 +15,7 @@ interface GenreConfig {
 async function loadGenreAppData(
   genreId: string,
   granularity: 'month' | 'week'
-): Promise<{ apps: AppScoreInput[]; periods: string[] }> {
+): Promise<{ apps: AppScoreInput[]; periods: string[]; storeIds: Map<string, { iosAppId: string | null; androidAppId: string | null }> }> {
   const timeField = granularity === 'week' ? 'week' : 'month';
   let query = getDb().collection('snapshots')
     .where('genreId', '==', genreId)
@@ -30,6 +30,8 @@ async function loadGenreAppData(
   const appDataMap = new Map<string, {
     appName: string;
     publisherName: string;
+    iosAppId: string | null;
+    androidAppId: string | null;
     revenueByPeriod: Record<string, number>;
     downloadsByPeriod: Record<string, number>;
   }>();
@@ -48,12 +50,16 @@ async function loadGenreAppData(
         appDataMap.set(appId, {
           appName: data.unifiedAppName || 'Unknown',
           publisherName: data.publisherName || 'Unknown',
+          iosAppId: data.iosAppId || null,
+          androidAppId: data.androidAppId || null,
           revenueByPeriod: {},
           downloadsByPeriod: {},
         });
       }
 
       const entry = appDataMap.get(appId)!;
+      if (!entry.iosAppId && data.iosAppId) entry.iosAppId = data.iosAppId;
+      if (!entry.androidAppId && data.androidAppId) entry.androidAppId = data.androidAppId;
       entry.revenueByPeriod[period] = data.storeRevenue || 0;
       entry.downloadsByPeriod[period] = data.downloads || 0;
     }
@@ -91,14 +97,19 @@ async function loadGenreAppData(
     })
   );
 
-  return { apps, periods };
+  const storeIds = new Map<string, { iosAppId: string | null; androidAppId: string | null }>();
+  for (const [appId, data] of appDataMap) {
+    storeIds.set(appId, { iosAppId: data.iosAppId, androidAppId: data.androidAppId });
+  }
+
+  return { apps, periods, storeIds };
 }
 
 export async function runInsightsPipeline(
   genre: GenreConfig,
   granularity: 'month' | 'week' = 'month'
 ): Promise<{ scored: number; topApps: ScoredApp[] }> {
-  const { apps, periods } = await loadGenreAppData(genre.id, granularity);
+  const { apps, periods, storeIds } = await loadGenreAppData(genre.id, granularity);
 
   if (apps.length === 0 || periods.length < 2) {
     return { scored: 0, topApps: [] };
@@ -145,14 +156,34 @@ export async function runInsightsPipeline(
   const latestPeriod = periods[periods.length - 1];
   const docId = `${genre.id}_${latestPeriod}`;
 
+  // Enrich games and watchList with period data and store IDs
+  const enrichedGames = insight.games.map((game: any) => {
+    const ids = storeIds.get(game.appId);
+    return {
+      ...game,
+      iosAppId: ids?.iosAppId || null,
+      androidAppId: ids?.androidAppId || null,
+      periodData: periodData[game.appId] || {},
+    };
+  });
+  const enrichedWatchList = insight.watchList.map((item: any) => {
+    const ids = storeIds.get(item.appId);
+    return {
+      ...item,
+      iosAppId: ids?.iosAppId || null,
+      androidAppId: ids?.androidAppId || null,
+      periodData: periodData[item.appId] || {},
+    };
+  });
+
   await getDb().collection('insights').doc(docId).set({
     genreId: genre.id,
     period: latestPeriod,
     granularity,
     generatedAt: Timestamp.now(),
     summary: insight.summary,
-    games: insight.games,
-    watchList: insight.watchList,
+    games: enrichedGames,
+    watchList: enrichedWatchList,
   });
 
   // Store individual scores for all apps (for Dashboard AI Score column)

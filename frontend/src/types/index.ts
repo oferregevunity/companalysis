@@ -77,6 +77,9 @@ export interface InsightGame {
   score: number;
   subScores: SubScores;
   explanation: string;
+  iosAppId?: string | null;
+  androidAppId?: string | null;
+  periodData?: Record<string, { revenue: number; downloads: number }>;
 }
 
 export interface InsightWatchItem {
@@ -85,6 +88,9 @@ export interface InsightWatchItem {
   publisherName: string;
   score: number;
   reason: string;
+  iosAppId?: string | null;
+  androidAppId?: string | null;
+  periodData?: Record<string, { revenue: number; downloads: number }>;
 }
 
 export interface GenreInsightDoc {

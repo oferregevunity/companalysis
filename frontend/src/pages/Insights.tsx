@@ -1,10 +1,12 @@
 import { useState, useEffect } from 'react';
 import { collection, getDocs } from 'firebase/firestore';
 import { LineChart, Line, ResponsiveContainer } from 'recharts';
+import { useNavigate } from 'react-router-dom';
 import { db } from '../lib/firebase';
 import { generateInsights } from '../lib/api';
 import { useInsights } from '../hooks/useInsights';
-import type { Genre, InsightGame, GenreInsightDoc } from '../types';
+import { formatCurrency, formatNumber, formatMonth, formatWeek } from '../lib/dataProcessing';
+import type { Genre, InsightGame, InsightWatchItem, GenreInsightDoc } from '../types';
 
 function ScoreBadge({ score }: { score: number }) {
   const color = score >= 60 ? 'bg-green-100 text-green-800'
@@ -30,11 +32,78 @@ function SubScoreBar({ label, value, max = 25 }: { label: string; value: number;
   );
 }
 
-function GameCard({ game, isExpanded, onToggle }: {
+function StoreLinks({ iosAppId, androidAppId }: { iosAppId?: string | null; androidAppId?: string | null }) {
+  if (!iosAppId && !androidAppId) return null;
+  return (
+    <div className="flex items-center gap-2">
+      {iosAppId && (
+        <a href={`https://apps.apple.com/app/id${iosAppId}`} target="_blank" rel="noopener noreferrer"
+          className="inline-flex items-center gap-1 text-xs text-gray-500 hover:text-gray-800 transition-colors">
+          <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.8-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/>
+          </svg>
+          App Store
+        </a>
+      )}
+      {androidAppId && (
+        <a href={`https://play.google.com/store/apps/details?id=${androidAppId}`} target="_blank" rel="noopener noreferrer"
+          className="inline-flex items-center gap-1 text-xs text-gray-500 hover:text-gray-800 transition-colors">
+          <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M3.609 1.814L13.792 12 3.61 22.186a.996.996 0 01-.61-.92V2.734a1 1 0 01.609-.92zm10.89 10.893l2.302 2.302-10.937 6.333 8.635-8.635zm3.199-3.199l2.807 1.626a1 1 0 010 1.732l-2.807 1.626L15.206 12l2.492-2.492zM5.864 2.658L16.8 8.99l-2.302 2.302-8.634-8.634z"/>
+          </svg>
+          Google Play
+        </a>
+      )}
+    </div>
+  );
+}
+
+function PeriodDataTable({ periodData, granularity }: {
+  periodData: Record<string, { revenue: number; downloads: number }>;
+  granularity: 'month' | 'week';
+}) {
+  const periods = Object.keys(periodData).sort();
+  if (periods.length === 0) return null;
+  const fmtPeriod = granularity === 'week' ? formatWeek : formatMonth;
+  // Show last 6 periods max
+  const display = periods.slice(-6);
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full text-xs">
+        <thead>
+          <tr className="border-b border-gray-100">
+            <th className="text-left py-1 pr-2 text-gray-400 font-medium">Period</th>
+            {display.map(p => (
+              <th key={p} className="text-right py-1 px-2 text-gray-400 font-medium whitespace-nowrap">{fmtPeriod(p)}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          <tr className="border-b border-gray-50">
+            <td className="py-1 pr-2 text-gray-500">Revenue</td>
+            {display.map(p => (
+              <td key={p} className="text-right py-1 px-2 tabular-nums text-gray-700">{formatCurrency(periodData[p].revenue)}</td>
+            ))}
+          </tr>
+          <tr>
+            <td className="py-1 pr-2 text-gray-500">Downloads</td>
+            {display.map(p => (
+              <td key={p} className="text-right py-1 px-2 tabular-nums text-gray-700">{formatNumber(periodData[p].downloads)}</td>
+            ))}
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function GameCard({ game, isExpanded, onToggle, granularity }: {
   game: InsightGame;
   isExpanded: boolean;
   onToggle: () => void;
+  granularity: 'month' | 'week';
 }) {
+  const navigate = useNavigate();
   const sparkData = [
     { v: game.score * 0.3 },
     { v: game.score * 0.5 },
@@ -70,7 +139,7 @@ function GameCard({ game, isExpanded, onToggle }: {
         {isExpanded ? 'Hide details' : 'Show details'}
       </button>
       {isExpanded && (
-        <div className="mt-3 space-y-2">
+        <div className="mt-3 space-y-3">
           <p className="text-sm text-gray-700">{game.explanation}</p>
           <div className="space-y-1">
             <SubScoreBar label="Rev. Accel." value={game.subScores.revenueAcceleration} />
@@ -78,13 +147,58 @@ function GameCard({ game, isExpanded, onToggle }: {
             <SubScoreBar label="Anomaly" value={game.subScores.anomalyScore} />
             <SubScoreBar label="Convergence" value={game.subScores.crossMetricConvergence} />
           </div>
+          {game.periodData && Object.keys(game.periodData).length > 0 && (
+            <PeriodDataTable periodData={game.periodData} granularity={granularity} />
+          )}
+          <div className="flex items-center gap-3 pt-1">
+            <StoreLinks iosAppId={game.iosAppId} androidAppId={game.androidAppId} />
+            <button
+              onClick={() => navigate(`/?search=${encodeURIComponent(game.appName)}`)}
+              className="inline-flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800 transition-colors"
+            >
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 6H5.25A2.25 2.25 0 003 8.25v10.5A2.25 2.25 0 005.25 21h10.5A2.25 2.25 0 0018 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25" />
+              </svg>
+              View in Dashboard
+            </button>
+          </div>
         </div>
       )}
     </div>
   );
 }
 
-function GenreInsightCard({ insight, genreName }: { insight: GenreInsightDoc; genreName: string }) {
+function WatchList({ items }: { items: InsightWatchItem[] }) {
+  const navigate = useNavigate();
+  return (
+    <>
+      <h3 className="text-sm font-medium text-gray-700 mt-6 mb-3">Watch List</h3>
+      <div className="space-y-2">
+        {items.map(item => (
+          <div key={item.appId} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-medium text-gray-900">{item.appName}</span>
+              <span className="text-xs text-gray-500">{item.publisherName}</span>
+              <StoreLinks iosAppId={item.iosAppId} androidAppId={item.androidAppId} />
+              <button
+                onClick={() => navigate(`/?search=${encodeURIComponent(item.appName)}`)}
+                className="text-xs text-blue-600 hover:text-blue-800"
+              >
+                Dashboard
+              </button>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-gray-500">{item.reason}</span>
+              <ScoreBadge score={item.score} />
+            </div>
+          </div>
+        ))}
+      </div>
+    </>
+  );
+}
+
+function GenreInsightCard({ insight, genreName, granularity }: { insight: GenreInsightDoc; genreName: string; granularity: 'month' | 'week' }) {
   const [expandedGame, setExpandedGame] = useState<string | null>(null);
 
   const timeAgo = (date: Date) => {
@@ -113,27 +227,12 @@ function GenreInsightCard({ insight, genreName }: { insight: GenreInsightDoc; ge
             game={game}
             isExpanded={expandedGame === game.appId}
             onToggle={() => setExpandedGame(expandedGame === game.appId ? null : game.appId)}
+            granularity={granularity}
           />
         ))}
       </div>
       {insight.watchList.length > 0 && (
-        <>
-          <h3 className="text-sm font-medium text-gray-700 mt-6 mb-3">Watch List</h3>
-          <div className="space-y-2">
-            {insight.watchList.map(item => (
-              <div key={item.appId} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                <div>
-                  <span className="text-sm font-medium text-gray-900">{item.appName}</span>
-                  <span className="text-xs text-gray-500 ml-2">{item.publisherName}</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="text-xs text-gray-500">{item.reason}</span>
-                  <ScoreBadge score={item.score} />
-                </div>
-              </div>
-            ))}
-          </div>
-        </>
+        <WatchList items={insight.watchList} />
       )}
     </div>
   );
@@ -241,6 +340,7 @@ export default function Insights() {
               key={insight.genreId}
               insight={insight}
               genreName={genreMap.get(insight.genreId)?.name || insight.genreId}
+              granularity={granularity}
             />
           ))}
         </div>

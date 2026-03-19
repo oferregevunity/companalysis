@@ -1,4 +1,5 @@
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
   useReactTable,
   getCoreRowModel,
@@ -189,6 +190,16 @@ export default function Dashboard() {
   const [dateTo, setDateTo] = useState<string>('');
   const [granularity, setGranularity] = useState<Granularity>('month');
   const [metricView, setMetricView] = useState<MetricView>('revenue');
+
+  const [searchParams, setSearchParams] = useSearchParams();
+  useEffect(() => {
+    const q = searchParams.get('search');
+    if (q) {
+      setGlobalFilter(q);
+      searchParams.delete('search');
+      setSearchParams(searchParams, { replace: true });
+    }
+  }, []);
 
   const switchGranularity = (g: Granularity) => {
     setGranularity(g);
