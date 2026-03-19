@@ -11,14 +11,74 @@ import {
 import type { SortingState } from '@tanstack/react-table';
 import { useGenres } from '../hooks/useGenres';
 import { useMultiGenreSnapshots } from '../hooks/useMultiGenreSnapshots';
-import { formatCurrency, formatPercent, formatMonth } from '../lib/dataProcessing';
+import type { Granularity } from '../hooks/useMultiGenreSnapshots';
+import { useFavorites } from '../hooks/useFavorites';
+import { useAppScores } from '../hooks/useAppScores';
+import { formatCurrency, formatNumber, formatPercent, formatMonth, formatWeek } from '../lib/dataProcessing';
 import { getHeatmapBg, getHeatmapText } from '../lib/colorScale';
 import { exportToCsv } from '../lib/csvExport';
 import { api } from '../lib/api';
-import type { ComparisonRow } from '../types';
+import type { ComparisonRow, RisingStatus } from '../types';
 
 const columnHelper = createColumnHelper<ComparisonRow>();
 const PAGE_SIZE_OPTIONS = [50, 100, 200, 500];
+
+const RISING_BADGE: Record<RisingStatus, { bg: string; text: string; label: string }> = {
+  'Rising 3': { bg: '#b7e1cd', text: '#137333', label: 'Rising 3' },
+  'Rising 2': { bg: '#ceead6', text: '#137333', label: 'Rising 2' },
+  'Rising 1': { bg: '#e6f4ea', text: '#137333', label: 'Rising 1' },
+  'NOT': { bg: '#f1f3f4', text: '#80868b', label: 'Not rising' },
+};
+
+const ArrowUp = () => (
+  <svg className="w-2.5 h-2.5 flex-shrink-0" viewBox="0 0 20 20" fill="currentColor" aria-hidden>
+    <path d="M10 6L5 14h10L10 6z" />
+  </svg>
+);
+const ArrowDown = () => (
+  <svg className="w-2.5 h-2.5 flex-shrink-0" viewBox="0 0 20 20" fill="currentColor" aria-hidden>
+    <path d="M10 14L5 6h10L10 14z" />
+  </svg>
+);
+
+function PercentChangeWithIcon({ pct, formatPercent }: { pct: number; formatPercent: (n: number | null) => string }) {
+  let arrowCount = 0;
+  let direction: 'up' | 'down' | 'flat' = 'flat';
+  if (pct >= 20) {
+    arrowCount = 3;
+    direction = 'up';
+  } else if (pct >= 10) {
+    arrowCount = 2;
+    direction = 'up';
+  } else if (pct > 0) {
+    arrowCount = 1;
+    direction = 'up';
+  } else if (pct > -10 && pct <= 0) {
+    direction = 'flat';
+  } else if (pct > -20) {
+    arrowCount = 1;
+    direction = 'down';
+  } else {
+    arrowCount = 2;
+    direction = 'down';
+    if (pct < -20) arrowCount = 3;
+  }
+
+  return (
+    <div className="flex items-center justify-end gap-0.5 min-h-0">
+      {(direction === 'up' || direction === 'down') && (
+        <span className="inline-flex items-center gap-px">
+          {direction === 'up' && Array.from({ length: arrowCount }, (_, i) => <ArrowUp key={i} />)}
+          {direction === 'down' && Array.from({ length: arrowCount }, (_, i) => <ArrowDown key={i} />)}
+        </span>
+      )}
+      {direction === 'flat' && (
+        <span className="w-2.5 h-2.5 flex-shrink-0 inline-flex items-center justify-center text-[8px] font-bold leading-none">−</span>
+      )}
+      <span className="tabular-nums">{formatPercent(pct)}</span>
+    </div>
+  );
+}
 
 function StoreLinks({ row }: { row: ComparisonRow }) {
   const { iosAppId, androidAppId } = row;
@@ -83,6 +143,23 @@ function CommentCell({ row }: { row: ComparisonRow }) {
   );
 }
 
+function StarButton({ active, onClick }: { active: boolean; onClick: () => void }) {
+  return (
+    <button onClick={(e) => { e.stopPropagation(); onClick(); }}
+      className="p-0.5 hover:scale-110 transition-transform" title={active ? 'Remove from favorites' : 'Add to favorites'}>
+      {active ? (
+        <svg className="w-4 h-4 text-amber-400" viewBox="0 0 20 20" fill="currentColor">
+          <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"/>
+        </svg>
+      ) : (
+        <svg className="w-4 h-4 text-[#dadce0] hover:text-amber-300" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth={1.5}>
+          <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"/>
+        </svg>
+      )}
+    </button>
+  );
+}
+
 const GENRE_COLORS = [
   { bg: '#e8f0fe', text: '#1a73e8', border: '#aecbfa' },
   { bg: '#e6f4ea', text: '#137333', border: '#ceead6' },
@@ -94,15 +171,33 @@ const GENRE_COLORS = [
   { bg: '#fce4ec', text: '#b71c1c', border: '#f48fb1' },
 ];
 
+type SortMetric = 'value' | 'percent';
+const RISING_OPTIONS: RisingStatus[] = ['Rising 3', 'Rising 2', 'Rising 1', 'NOT'];
+type MetricView = 'revenue' | 'downloads';
+
 export default function Dashboard() {
   const { genres, loading: genresLoading } = useGenres();
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [sorting, setSorting] = useState<SortingState>([]);
   const [globalFilter, setGlobalFilter] = useState('');
-  const [refreshingId, setRefreshingId] = useState<string | null>(null);
-  const [message, setMessage] = useState('');
+  const [sortMetric, setSortMetric] = useState<SortMetric>('value');
+  const [selectedRising, setSelectedRising] = useState<Set<RisingStatus>>(new Set());
+  const [risingDropdownOpen, setRisingDropdownOpen] = useState(false);
+  const [risingThreshold, setRisingThreshold] = useState(20);
+  const [showFavoritesOnly, setShowFavoritesOnly] = useState(false);
+  const [dateFrom, setDateFrom] = useState<string>('');
+  const [dateTo, setDateTo] = useState<string>('');
+  const [granularity, setGranularity] = useState<Granularity>('month');
+  const [metricView, setMetricView] = useState<MetricView>('revenue');
 
-  // Auto-select all genres on first load
+  const switchGranularity = (g: Granularity) => {
+    setGranularity(g);
+    setDateFrom('');
+    setDateTo('');
+  };
+
+  const { favorites, toggleFavorite } = useFavorites();
+
   const initialized = useState(false);
   if (!initialized[0] && genres.length > 0 && selectedIds.size === 0) {
     initialized[1](true);
@@ -113,7 +208,27 @@ export default function Dashboard() {
     () => genres.filter(g => selectedIds.has(g.id)),
     [genres, selectedIds]
   );
-  const { rows: data, months, loading: dataLoading, error } = useMultiGenreSnapshots(selectedGenres);
+  const { scoreMap } = useAppScores(selectedGenres, granularity);
+  const { rows: data, months, loading: dataLoading, error, refresh } = useMultiGenreSnapshots(selectedGenres, risingThreshold, granularity);
+
+  const filteredMonths = useMemo(() => {
+    return months.filter(m => {
+      if (dateFrom && m < dateFrom) return false;
+      if (dateTo && m > dateTo) return false;
+      return true;
+    });
+  }, [months, dateFrom, dateTo]);
+
+  const filteredData = useMemo(() => {
+    let rows = data;
+    if (showFavoritesOnly) {
+      rows = rows.filter(r => favorites.has(r.appId));
+    }
+    if (selectedRising.size > 0) {
+      rows = rows.filter(r => selectedRising.has(r.risingStatus) || selectedRising.has(r.risingStatusDownloads));
+    }
+    return rows;
+  }, [data, showFavoritesOnly, favorites, selectedRising]);
 
   const genreColorMap = useMemo(() => {
     const map = new Map<string, typeof GENRE_COLORS[0]>();
@@ -130,45 +245,26 @@ export default function Dashboard() {
     });
   };
 
-  const handleRefresh = async (genreIds: string[]) => {
-    setRefreshingId(genreIds[0]);
-    setMessage('');
-    try {
-      const { plan } = await api.fetchPlan(genreIds);
-      const allSteps: { genreId: string; genreName: string; month: string; startDate: string; endDate: string }[] = [];
-      for (const g of plan) {
-        for (const m of g.months) {
-          allSteps.push({ genreId: g.genreId, genreName: g.genreName, ...m });
-        }
-      }
-      const errors: string[] = [];
-      let done = 0;
-      for (const step of allSteps) {
-        setMessage(`Refreshing ${step.genreName} ${step.month} (${++done}/${allSteps.length})...`);
-        try {
-          const r = await api.fetchMonth(step.genreId, step.month, step.startDate, step.endDate);
-          if (!r.success && r.error) errors.push(r.error);
-        } catch (e) {
-          errors.push(`${step.genreName} ${step.month}: ${e instanceof Error ? e.message : 'Failed'}`);
-        }
-      }
-      setMessage(errors.length === 0
-        ? `Refreshed ${allSteps.length} months across ${plan.length} genre(s)`
-        : `Done with ${errors.length} error(s): ${errors.slice(0, 2).join('; ')}`);
-    } catch (err) {
-      setMessage(`Failed: ${err instanceof Error ? err.message : 'Unknown error'}`);
-    } finally {
-      setRefreshingId(null);
-    }
-  };
-
   const columns = useMemo(() => {
     const cols: any[] = [
       columnHelper.display({
         id: 'rank',
         header: '#',
         cell: ({ row }) => <span className="text-[12px] text-[#80868b] tabular-nums">{row.index + 1}</span>,
-        size: 44,
+        size: 40,
+        enableSorting: false,
+      }),
+      columnHelper.display({
+        id: 'favorite',
+        header: () => (
+          <svg className="w-3.5 h-3.5 text-amber-400" viewBox="0 0 20 20" fill="currentColor">
+            <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"/>
+          </svg>
+        ),
+        cell: ({ row }) => (
+          <StarButton active={favorites.has(row.original.appId)} onClick={() => toggleFavorite(row.original.appId)} />
+        ),
+        size: 36,
         enableSorting: false,
       }),
       columnHelper.accessor('appName', {
@@ -181,83 +277,169 @@ export default function Dashboard() {
             <div className="text-[11px] text-[#80868b] truncate">{info.row.original.publisherName || '--'}</div>
           </div>
         ),
-        size: 200,
+        size: 180,
       }),
-    ];
-
-    cols.push(
       columnHelper.accessor('genreName', {
         header: 'Genre',
         cell: (info) => {
-          const color = genreColorMap.get(info.row.original.genreId) || GENRE_COLORS[0];
+          const { allGenres } = info.row.original;
           return (
-            <span className="inline-flex px-2 py-0.5 rounded-full text-[11px] font-medium"
-              style={{ backgroundColor: color.bg, color: color.text }}>
-              {info.getValue()}
-            </span>
+            <div className="flex flex-wrap gap-1">
+              {allGenres.map((g) => {
+                const color = genreColorMap.get(g.id) || GENRE_COLORS[0];
+                return (
+                  <span key={g.id} className="inline-flex px-1.5 py-0.5 rounded-full text-[10px] font-medium"
+                    style={{ backgroundColor: color.bg, color: color.text }}>
+                    {g.name}
+                  </span>
+                );
+              })}
+            </div>
           );
         },
         size: 120,
-      })
-    );
+      }),
+      ...(metricView === 'revenue'
+        ? [
+            columnHelper.accessor('risingStatus', {
+              id: 'risingRev',
+              header: 'Rising (Rev)',
+              cell: (info) => {
+                const status = info.getValue();
+                const badge = RISING_BADGE[status];
+                return (
+                  <span className="inline-flex px-1.5 py-0.5 rounded-full text-[10px] font-semibold whitespace-nowrap"
+                    style={{ backgroundColor: badge.bg, color: badge.text }}>
+                    {status === 'NOT' ? '—' : status}
+                  </span>
+                );
+              },
+              size: 78,
+              sortingFn: (rowA, rowB) => {
+                const order: Record<RisingStatus, number> = { 'Rising 3': 3, 'Rising 2': 2, 'Rising 1': 1, 'NOT': 0 };
+                return order[rowA.original.risingStatus] - order[rowB.original.risingStatus];
+              },
+            }),
+          ]
+        : []),
+      ...(metricView === 'downloads'
+        ? [
+            columnHelper.accessor('risingStatusDownloads', {
+              id: 'risingDL',
+              header: 'Rising (DL)',
+              cell: (info) => {
+                const status = info.getValue();
+                const badge = RISING_BADGE[status];
+                return (
+                  <span className="inline-flex px-1.5 py-0.5 rounded-full text-[10px] font-semibold whitespace-nowrap"
+                    style={{ backgroundColor: badge.bg, color: badge.text }}>
+                    {status === 'NOT' ? '—' : status}
+                  </span>
+                );
+              },
+              size: 78,
+              sortingFn: (rowA, rowB) => {
+                const order: Record<RisingStatus, number> = { 'Rising 3': 3, 'Rising 2': 2, 'Rising 1': 1, 'NOT': 0 };
+                return order[rowA.original.risingStatusDownloads] - order[rowB.original.risingStatusDownloads];
+              },
+            }),
+          ]
+        : []),
+      {
+        id: 'aiScore',
+        header: 'AI Score',
+        accessorFn: (row: ComparisonRow) => scoreMap.get(row.appId)?.score ?? null,
+        cell: ({ getValue }: { getValue: () => number | null }) => {
+          const score = getValue();
+          if (score === null) return <span className="text-gray-300">—</span>;
+          const color = score >= 60 ? 'text-green-700 bg-green-50'
+            : score >= 40 ? 'text-yellow-700 bg-yellow-50'
+            : 'text-gray-500 bg-gray-50';
+          return (
+            <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${color}`}>
+              {score}
+            </span>
+          );
+        },
+        sortingFn: 'basic',
+      },
+    ];
 
-    for (let mi = 0; mi < months.length; mi++) {
-      const month = months[mi];
+    const fmtPeriod = granularity === 'week' ? formatWeek : formatMonth;
+    const isRevenue = metricView === 'revenue';
+    const valuesByMonth = isRevenue ? 'revenueByMonth' : 'downloadsByMonth';
+    const pctByMonth = isRevenue ? 'percentChanges' : 'downloadPercentChanges';
+    const fmtValue = isRevenue ? formatCurrency : formatNumber;
+    const suffix = isRevenue ? 'Rev' : 'DL';
+
+    for (let mi = 0; mi < filteredMonths.length; mi++) {
+      const month = filteredMonths[mi];
       const isFirst = mi === 0;
 
       cols.push(
-        columnHelper.accessor((row) => row.revenueByMonth[month] ?? 0, {
-          id: `m_${month}`,
-          header: formatMonth(month),
-          cell: ({ getValue, row }) => {
-            const revenue = getValue();
-            const pct = isFirst ? undefined : row.original.percentChanges[month];
+        columnHelper.accessor((row) => row[valuesByMonth][month] ?? 0, {
+          id: `${suffix}_${month}`,
+          header: `${fmtPeriod(month)}`,
+          cell: ({ getValue, row: tableRow }) => {
+            const val = getValue();
+            const pct = isFirst ? undefined : (tableRow.original[pctByMonth] as Record<string, number | null>)[month];
             const hasPct = pct !== undefined && pct !== null;
             const bg = hasPct ? getHeatmapBg(pct) : 'transparent';
             const textColor = hasPct ? getHeatmapText(pct) : undefined;
             return (
-              <div className="text-right rounded-md px-2 py-1 -mx-1" style={{ backgroundColor: bg }}>
-                <div className="text-[13px] font-medium tabular-nums text-[#202124]">{formatCurrency(revenue)}</div>
+              <div className="text-right rounded-md px-1.5 py-0.5 -mx-1 leading-tight" style={{ backgroundColor: bg }}>
+                <div className="text-[12px] font-medium tabular-nums text-[#202124]">{fmtValue(val)}</div>
                 {hasPct && (
-                  <div className="text-[11px] tabular-nums font-medium" style={{ color: textColor }}>{formatPercent(pct)}</div>
+                  <div className="text-[10px] tabular-nums font-medium leading-none" style={{ color: textColor }}>
+                    <PercentChangeWithIcon pct={pct as number} formatPercent={formatPercent} />
+                  </div>
                 )}
               </div>
             );
           },
-          size: 120,
+          sortingFn: (rowA, rowB) => {
+            if (sortMetric === 'percent') {
+              const a = (rowA.original[pctByMonth] as Record<string, number | null>)[month] ?? -Infinity;
+              const b = (rowB.original[pctByMonth] as Record<string, number | null>)[month] ?? -Infinity;
+              return (a as number) - (b as number);
+            }
+            return (rowA.original[valuesByMonth][month] ?? 0) - (rowB.original[valuesByMonth][month] ?? 0);
+          },
+          size: 105,
         })
       );
     }
 
     cols.push(
-      columnHelper.accessor('dailyRevenue', {
-        header: 'Daily Rev',
+      columnHelper.accessor(isRevenue ? 'dailyRevenue' : 'dailyDownloads', {
+        id: 'daily',
+        header: isRevenue ? 'Daily Rev' : 'Daily DL',
         cell: (info) => (
-          <div className="text-right text-[13px] font-semibold tabular-nums text-[#202124]">{formatCurrency(info.getValue())}</div>
+          <div className="text-right text-[12px] font-semibold tabular-nums text-[#202124]">{fmtValue(info.getValue())}</div>
         ),
-        size: 100,
+        size: 85,
       }),
       columnHelper.display({
         id: 'links',
         header: 'Store',
         cell: ({ row }) => <StoreLinks row={row.original} />,
-        size: 64,
+        size: 56,
         enableSorting: false,
       }),
       columnHelper.display({
         id: 'comment',
         header: 'Notes',
         cell: ({ row }) => <CommentCell row={row.original} />,
-        size: 120,
+        size: 110,
         enableSorting: false,
       })
     );
 
     return cols;
-  }, [months, genreColorMap]);
+  }, [filteredMonths, genreColorMap, sortMetric, favorites, toggleFavorite, granularity, metricView, scoreMap]);
 
   const table = useReactTable({
-    data,
+    data: filteredData,
     columns,
     state: { sorting, globalFilter },
     onSortingChange: setSorting,
@@ -272,7 +454,7 @@ export default function Dashboard() {
       return (
         row.original.appName.toLowerCase().includes(q) ||
         row.original.publisherName.toLowerCase().includes(q) ||
-        row.original.genreName.toLowerCase().includes(q)
+        row.original.allGenres.some(g => g.name.toLowerCase().includes(q))
       );
     },
   });
@@ -288,18 +470,9 @@ export default function Dashboard() {
         <p className="text-[13px] text-[#5f6368] mt-0.5">Gaming market competitor analysis</p>
       </div>
 
-      {message && (
-        <div className={`mb-4 px-4 py-3 rounded-lg text-[13px] ${
-          message.includes('Failed') || message.includes('Errors')
-            ? 'bg-[#fce8e6] text-[#c5221f]' : 'bg-[#e6f4ea] text-[#137333]'
-        }`}>
-          {message}
-        </div>
-      )}
-
       {/* Genre pills */}
       {!genresLoading && genres.length > 0 && (
-        <div className="flex items-center gap-2 mb-4 flex-wrap">
+        <div className="flex items-center gap-2 mb-3 flex-wrap">
           <span className="text-[12px] font-medium text-[#5f6368] mr-1">Genres:</span>
           {genres.map((genre) => {
             const isSelected = selectedIds.has(genre.id);
@@ -309,25 +482,21 @@ export default function Dashboard() {
                 key={genre.id}
                 onClick={() => toggleGenre(genre.id)}
                 className={`inline-flex items-center px-3 py-1.5 rounded-full text-[12px] font-medium transition-all duration-150 border ${
-                  isSelected
-                    ? ''
-                    : 'bg-white text-[#5f6368] border-[#dadce0] hover:bg-[#f1f3f4]'
+                  isSelected ? '' : 'bg-white text-[#5f6368] border-[#dadce0] hover:bg-[#f1f3f4]'
                 }`}
                 style={isSelected ? { backgroundColor: color.bg, color: color.text, borderColor: color.border } : undefined}
               >
                 {genre.name}
-                {isSelected && (
-                  <span className="ml-1.5 text-[10px] opacity-60">{genre.country} &middot; {genre.monthsBack}mo</span>
-                )}
+                {isSelected && <span className="ml-1.5 text-[10px] opacity-60">{genre.country} &middot; {genre.monthsBack}mo</span>}
               </button>
             );
           })}
           <button
-            onClick={() => handleRefresh(Array.from(selectedIds))}
-            disabled={selectedIds.size === 0 || refreshingId !== null}
+            onClick={() => refresh()}
+            disabled={selectedIds.size === 0 || dataLoading}
             className="ml-2 inline-flex items-center gap-1 px-2.5 py-1.5 text-[12px] font-medium text-[#5f6368] border border-[#dadce0] rounded-full hover:bg-[#f1f3f4] disabled:opacity-40 transition-colors"
           >
-            {refreshingId ? (
+            {dataLoading ? (
               <div className="w-3 h-3 border-[1.5px] border-[#dadce0] border-t-primary-600 rounded-full animate-spin" />
             ) : (
               <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
@@ -339,32 +508,136 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* Toolbar */}
-      <div className="flex items-center gap-3 mb-4 flex-wrap">
-        <div className="relative flex-1 max-w-xs">
-          <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#80868b]" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+      {/* Toolbar row 1: Search + Date range + Export */}
+      <div className="flex items-center gap-2 mb-2 flex-wrap">
+        <div className="relative flex-1 max-w-[240px]">
+          <svg className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[#80868b]" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />
           </svg>
           <input
             type="text"
-            placeholder="Search apps, publishers, genres..."
+            placeholder="Search apps, publishers..."
             value={globalFilter}
             onChange={(e) => setGlobalFilter(e.target.value)}
-            className="w-full pl-9 pr-3 py-[7px] bg-white border border-[#dadce0] rounded-lg text-[13px] text-[#202124] placeholder-[#80868b] focus:outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-500 transition-colors"
+            className="w-full pl-8 pr-3 py-[6px] bg-white border border-[#dadce0] rounded-lg text-[12px] text-[#202124] placeholder-[#80868b] focus:outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-500 transition-colors"
           />
         </div>
-        {data.length > 0 && (
+
+        <div className="inline-flex rounded-lg border border-[#dadce0] overflow-hidden">
+          <button onClick={() => switchGranularity('month')}
+            className={`px-2.5 py-[5px] text-[11px] font-medium transition-colors ${granularity === 'month' ? 'bg-primary-50 text-primary-700 border-r border-[#dadce0]' : 'bg-white text-[#5f6368] border-r border-[#dadce0] hover:bg-[#f8f9fa]'}`}>
+            Monthly
+          </button>
+          <button onClick={() => switchGranularity('week')}
+            className={`px-2.5 py-[5px] text-[11px] font-medium transition-colors ${granularity === 'week' ? 'bg-primary-50 text-primary-700' : 'bg-white text-[#5f6368] hover:bg-[#f8f9fa]'}`}>
+            Weekly
+          </button>
+        </div>
+
+        {months.length > 0 && (
+          <>
+            <span className="text-[11px] text-[#80868b] ml-1">From</span>
+            <select value={dateFrom} onChange={(e) => setDateFrom(e.target.value)}
+              className="text-[12px] border border-[#dadce0] rounded-md px-2 py-[6px] bg-white text-[#3c4043] focus:outline-none focus:border-primary-500">
+              <option value="">All</option>
+              {months.map(m => <option key={m} value={m}>{granularity === 'week' ? formatWeek(m) : formatMonth(m)}</option>)}
+            </select>
+            <span className="text-[11px] text-[#80868b]">To</span>
+            <select value={dateTo} onChange={(e) => setDateTo(e.target.value)}
+              className="text-[12px] border border-[#dadce0] rounded-md px-2 py-[6px] bg-white text-[#3c4043] focus:outline-none focus:border-primary-500">
+              <option value="">All</option>
+              {months.map(m => <option key={m} value={m}>{granularity === 'week' ? formatWeek(m) : formatMonth(m)}</option>)}
+            </select>
+          </>
+        )}
+
+        {filteredData.length > 0 && (
           <button
-            onClick={() => exportToCsv(data, months, 'combined', `competitor-analysis-${new Date().toISOString().slice(0, 10)}.csv`)}
-            className="ml-auto inline-flex items-center gap-1.5 px-3 py-[7px] bg-white border border-[#dadce0] rounded-lg text-[13px] font-medium text-[#3c4043] hover:bg-[#f8f9fa] hover:shadow-sm transition-all duration-150"
+            onClick={() => exportToCsv(filteredData, filteredMonths, metricView, `competitor-analysis-${new Date().toISOString().slice(0, 10)}.csv`)}
+            className="ml-auto inline-flex items-center gap-1.5 px-3 py-[6px] bg-white border border-[#dadce0] rounded-lg text-[12px] font-medium text-[#3c4043] hover:bg-[#f8f9fa] hover:shadow-sm transition-all duration-150"
           >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24">
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
             </svg>
-            Export CSV
+            CSV
           </button>
         )}
       </div>
+
+      {/* Toolbar row 2: Metric toggle + Sort toggle + Rising filter + Favorites + Threshold */}
+      {data.length > 0 && (
+        <div className="flex items-center gap-2 mb-4 flex-wrap">
+          <div className="inline-flex rounded-lg border border-[#dadce0] overflow-hidden">
+            <button onClick={() => setMetricView('revenue')}
+              className={`px-2.5 py-[5px] text-[11px] font-medium transition-colors ${metricView === 'revenue' ? 'bg-primary-50 text-primary-700 border-r border-[#dadce0]' : 'bg-white text-[#5f6368] border-r border-[#dadce0] hover:bg-[#f8f9fa]'}`}>
+              Revenue
+            </button>
+            <button onClick={() => setMetricView('downloads')}
+              className={`px-2.5 py-[5px] text-[11px] font-medium transition-colors ${metricView === 'downloads' ? 'bg-primary-50 text-primary-700' : 'bg-white text-[#5f6368] hover:bg-[#f8f9fa]'}`}>
+              Downloads
+            </button>
+          </div>
+
+          <div className="inline-flex rounded-lg border border-[#dadce0] overflow-hidden">
+            <button onClick={() => setSortMetric('value')}
+              className={`px-2.5 py-[5px] text-[11px] font-medium transition-colors ${sortMetric === 'value' ? 'bg-primary-50 text-primary-700 border-r border-[#dadce0]' : 'bg-white text-[#5f6368] border-r border-[#dadce0] hover:bg-[#f8f9fa]'}`}>
+              Sort: Value
+            </button>
+            <button onClick={() => setSortMetric('percent')}
+              className={`px-2.5 py-[5px] text-[11px] font-medium transition-colors ${sortMetric === 'percent' ? 'bg-primary-50 text-primary-700' : 'bg-white text-[#5f6368] hover:bg-[#f8f9fa]'}`}>
+              Sort: %
+            </button>
+          </div>
+
+          <div className="relative">
+            <button type="button" onClick={() => setRisingDropdownOpen(o => !o)}
+              className="text-[12px] border border-[#dadce0] rounded-lg px-2.5 py-[5px] bg-white text-[#3c4043] focus:outline-none focus:border-primary-500 min-w-[120px] text-left flex items-center justify-between gap-1">
+              <span>Rising: {selectedRising.size === 0 ? 'All' : `${selectedRising.size} selected`}</span>
+              <svg className={`w-3.5 h-3.5 transition-transform ${risingDropdownOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+            </button>
+            {risingDropdownOpen && (
+              <>
+                <div className="fixed inset-0 z-10" onClick={() => setRisingDropdownOpen(false)} aria-hidden />
+                <div className="absolute left-0 top-full mt-1 z-20 bg-white border border-[#dadce0] rounded-lg shadow-lg py-1 min-w-[140px]">
+                  <button type="button" onClick={() => { setSelectedRising(new Set()); setRisingDropdownOpen(false); }}
+                    className="w-full px-3 py-1.5 text-left text-[12px] hover:bg-[#f8f9fa]">
+                    All
+                  </button>
+                  {RISING_OPTIONS.map((opt) => (
+                    <label key={opt} className="flex items-center gap-2 px-3 py-1.5 hover:bg-[#f8f9fa] cursor-pointer">
+                      <input type="checkbox" checked={selectedRising.has(opt)} onChange={(e) => {
+                        setSelectedRising(prev => {
+                          const next = new Set(prev);
+                          if (e.target.checked) next.add(opt); else next.delete(opt);
+                          return next;
+                        });
+                      }} className="rounded border-[#dadce0]" />
+                      <span className="text-[12px]">{opt === 'NOT' ? 'Not rising' : opt}</span>
+                    </label>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+
+          <button onClick={() => setShowFavoritesOnly(!showFavoritesOnly)}
+            className={`inline-flex items-center gap-1 px-2.5 py-[5px] text-[11px] font-medium rounded-lg border transition-colors ${
+              showFavoritesOnly ? 'bg-amber-50 text-amber-700 border-amber-200' : 'bg-white text-[#5f6368] border-[#dadce0] hover:bg-[#f8f9fa]'
+            }`}>
+            <svg className="w-3.5 h-3.5" viewBox="0 0 20 20" fill="currentColor">
+              <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"/>
+            </svg>
+            Favorites
+          </button>
+
+          <div className="inline-flex items-center gap-1 ml-auto">
+            <span className="text-[11px] text-[#80868b]">Rising threshold:</span>
+            <input type="number" value={risingThreshold} onChange={(e) => setRisingThreshold(Math.max(0, Number(e.target.value)))}
+              className="w-14 text-[12px] border border-[#dadce0] rounded-md px-2 py-[4px] bg-white text-[#3c4043] text-center focus:outline-none focus:border-primary-500" />
+            <span className="text-[11px] text-[#80868b]">%</span>
+          </div>
+        </div>
+      )}
 
       {/* States */}
       {genresLoading ? (
@@ -399,13 +672,16 @@ export default function Dashboard() {
           <h3 className="font-semibold text-[#c5221f] mb-1">Error</h3>
           <p className="text-[13px] text-[#c5221f]">{error}</p>
         </div>
-      ) : data.length === 0 ? (
+      ) : filteredData.length === 0 ? (
         <div className="bg-white rounded-xl border border-[#dadce0] p-12 text-center shadow-[0_1px_2px_0_rgba(60,64,67,0.1)]">
-          <h3 className="text-[15px] font-semibold text-[#202124] mb-1">No data yet</h3>
-          <p className="text-[13px] text-[#5f6368]">Click Refresh to fetch data for the selected genres.</p>
+          <h3 className="text-[15px] font-semibold text-[#202124] mb-1">
+            {data.length === 0 ? 'No data yet' : 'No matching apps'}
+          </h3>
+          <p className="text-[13px] text-[#5f6368]">
+            {data.length === 0 ? 'Fetch data from the Settings page.' : 'Try adjusting your filters.'}
+          </p>
         </div>
       ) : (
-        /* Table */
         <div className="bg-white rounded-xl border border-[#dadce0] overflow-hidden shadow-[0_1px_2px_0_rgba(60,64,67,0.1)]">
           <div className="overflow-x-auto">
             <table className="w-full border-collapse">
@@ -416,12 +692,12 @@ export default function Dashboard() {
                       <th
                         key={header.id}
                         onClick={header.column.getCanSort() ? header.column.getToggleSortingHandler() : undefined}
-                        className={`px-3 py-2.5 text-left text-[11px] font-semibold text-[#5f6368] uppercase tracking-wider bg-[#f8f9fa] ${
+                        className={`px-2 py-2 text-left text-[10px] font-semibold text-[#5f6368] uppercase tracking-wider bg-[#f8f9fa] whitespace-nowrap ${
                           header.column.getCanSort() ? 'cursor-pointer select-none hover:bg-[#f1f3f4]' : ''
                         }`}
                         style={{ width: header.column.getSize() }}
                       >
-                        <div className="flex items-center gap-1">
+                        <div className="flex items-center gap-0.5">
                           {flexRender(header.column.columnDef.header, header.getContext())}
                           {header.column.getIsSorted() === 'asc' && <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path d="M10 6l-5 5h10l-5-5z"/></svg>}
                           {header.column.getIsSorted() === 'desc' && <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path d="M10 14l5-5H5l5 5z"/></svg>}
@@ -435,7 +711,7 @@ export default function Dashboard() {
                 {table.getRowModel().rows.map((row, i) => (
                   <tr key={row.id} className={`border-b border-[#f1f3f4] hover:bg-[#f8f9fa] transition-colors duration-75 ${i % 2 === 0 ? 'bg-white' : 'bg-[#fafbfc]'}`}>
                     {row.getVisibleCells().map((cell) => (
-                      <td key={cell.id} className="px-3 py-2 text-[13px] text-[#3c4043]">
+                      <td key={cell.id} className="px-2 py-1.5 text-[12px] text-[#3c4043]">
                         {flexRender(cell.column.columnDef.cell, cell.getContext())}
                       </td>
                     ))}
@@ -445,10 +721,10 @@ export default function Dashboard() {
             </table>
           </div>
 
-          <div className="px-4 py-2.5 border-t border-[#e8eaed] bg-[#f8f9fa] flex items-center justify-between">
+          <div className="px-4 py-2 border-t border-[#e8eaed] bg-[#f8f9fa] flex items-center justify-between">
             <div className="flex items-center gap-3">
               <span className="text-[12px] text-[#5f6368]">
-                {currentPage * table.getState().pagination.pageSize + 1}&ndash;
+                {filteredCount > 0 ? `${currentPage * table.getState().pagination.pageSize + 1}` : '0'}&ndash;
                 {Math.min((currentPage + 1) * table.getState().pagination.pageSize, filteredCount)} of {filteredCount}
               </span>
               <select
