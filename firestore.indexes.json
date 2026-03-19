@@ -7,6 +7,24 @@
         { "fieldPath": "genreId", "order": "ASCENDING" },
         { "fieldPath": "month", "order": "ASCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "snapshots",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "genreId", "order": "ASCENDING" },
+        { "fieldPath": "granularity", "order": "ASCENDING" },
+        { "fieldPath": "week", "order": "ASCENDING" }
+      ]
+    }
+    {
+      "collectionGroup": "insights",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "genreId", "order": "ASCENDING" },
+        { "fieldPath": "granularity", "order": "ASCENDING" },
+        { "fieldPath": "generatedAt", "order": "DESCENDING" }
+      ]
     }
   ],
   "fieldOverrides": []

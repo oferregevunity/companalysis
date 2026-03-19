@@ -37,5 +37,21 @@ service cloud.firestore {
       allow read: if isUnityUser();
       allow write: if false;
     }
+
+    match /favorites/{favId} {
+      allow read: if isUnityUser();
+      allow create: if isUnityUser() && request.resource.data.userId == request.auth.uid;
+      allow delete: if isUnityUser() && resource.data.userId == request.auth.uid;
+    }
+
+    match /insights/{docId} {
+      allow read: if isUnityUser();
+      allow write: if false;
+
+      match /scores/{scoreId} {
+        allow read: if isUnityUser();
+        allow write: if false;
+      }
+    }
   }
 }
