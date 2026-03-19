@@ -1,10 +1,12 @@
 import type { ReactNode } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
+import { useFetchProgress } from '../hooks/useFetchProgress';
 
 export function Layout({ children }: { children: ReactNode }) {
   const { user, signOut } = useAuth();
   const location = useLocation();
+  const fetchProgress = useFetchProgress();
 
   const navItems = [
     {
@@ -14,6 +16,16 @@ export function Layout({ children }: { children: ReactNode }) {
       icon: (
         <svg className="w-[18px] h-[18px]" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6A2.25 2.25 0 016 3.75h2.25A2.25 2.25 0 0110.5 6v2.25a2.25 2.25 0 01-2.25 2.25H6a2.25 2.25 0 01-2.25-2.25V6zM3.75 15.75A2.25 2.25 0 016 13.5h2.25a2.25 2.25 0 012.25 2.25V18a2.25 2.25 0 01-2.25 2.25H6A2.25 2.25 0 013.75 18v-2.25zM13.5 6a2.25 2.25 0 012.25-2.25H18A2.25 2.25 0 0120.25 6v2.25A2.25 2.25 0 0118 10.5h-2.25a2.25 2.25 0 01-2.25-2.25V6zM13.5 15.75a2.25 2.25 0 012.25-2.25H18a2.25 2.25 0 012.25 2.25V18A2.25 2.25 0 0118 20.25h-2.25A2.25 2.25 0 0113.5 18v-2.25z" />
+        </svg>
+      ),
+    },
+    {
+      path: '/insights',
+      label: 'Rising Stars',
+      match: (p: string) => p === '/insights',
+      icon: (
+        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904 9 18.75l-.813-2.846a4.5 4.5 0 0 0-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 0 0 3.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 0 0 3.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 0 0-3.09 3.09ZM18.259 8.715 18 9.75l-.259-1.035a3.375 3.375 0 0 0-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 0 0 2.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 0 0 2.455 2.456L21.75 6l-1.036.259a3.375 3.375 0 0 0-2.455 2.456Z" />
         </svg>
       ),
     },
@@ -61,6 +73,32 @@ export function Layout({ children }: { children: ReactNode }) {
             );
           })}
         </nav>
+
+        {fetchProgress.active && (
+          <div className="mx-3 mb-2 px-3 py-2.5 bg-primary-50 rounded-xl border border-primary-100">
+            <div className="flex items-center gap-2 mb-1.5">
+              <div className="w-3.5 h-3.5 border-[1.5px] border-primary-200 border-t-primary-600 rounded-full animate-spin shrink-0" />
+              <span className="text-[11px] font-medium text-primary-700 truncate">
+                {fetchProgress.label}
+              </span>
+            </div>
+            <div className="w-full bg-primary-100 rounded-full h-1">
+              <div className="bg-primary-600 h-1 rounded-full transition-all duration-500"
+                style={{ width: `${fetchProgress.total > 0 ? (fetchProgress.current / fetchProgress.total) * 100 : 0}%` }} />
+            </div>
+            <span className="text-[10px] text-primary-500 mt-1 block">
+              {fetchProgress.current} / {fetchProgress.total} months
+            </span>
+          </div>
+        )}
+
+        {!fetchProgress.active && fetchProgress.doneMessage && (
+          <div className={`mx-3 mb-2 px-3 py-2 rounded-xl text-[11px] font-medium ${
+            fetchProgress.doneMessage.includes('error') ? 'bg-[#fce8e6] text-[#c5221f]' : 'bg-[#e6f4ea] text-[#137333]'
+          }`}>
+            {fetchProgress.doneMessage}
+          </div>
+        )}
 
         <div className="px-4 py-3 border-t border-[#e8eaed]">
           <div className="flex items-center gap-2.5">
