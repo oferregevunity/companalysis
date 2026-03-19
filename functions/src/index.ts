@@ -190,6 +190,9 @@ export const compAnalysisApi = onRequest(
             authTokenMonth
           );
           sendSuccess(res, result);
+          // Fire-and-forget: generate insights after fetch
+          runInsightsPipeline({ id: fetchGenreId, name: genre.name }, 'month')
+            .catch(err => console.error('Post-fetch insight generation failed:', err));
           return;
         }
 
@@ -243,6 +246,9 @@ export const compAnalysisApi = onRequest(
             weekAuthToken
           );
           sendSuccess(res, weekResult);
+          // Fire-and-forget: generate insights after fetch
+          runInsightsPipeline({ id: weekGenreId, name: weekGenre.name }, 'week')
+            .catch(err => console.error('Post-fetch insight generation failed:', err));
           return;
         }
 
