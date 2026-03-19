@@ -7,8 +7,6 @@ import {
   computeRisingStarScore,
   selectTopRisingStars,
   type AppScoreInput,
-  type ScoredApp,
-  type SubScores,
 } from './scoringEngine';
 
 // ---------------------------------------------------------------------------

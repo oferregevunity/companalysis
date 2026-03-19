@@ -2,7 +2,8 @@ import * as admin from 'firebase-admin';
 import { getFirestore } from 'firebase-admin/firestore';
 import { onRequest } from 'firebase-functions/v2/https';
 import { sensorTowerAuthToken } from './sensorTower/client';
-import { fetchAndStoreGenre, fetchAndStoreMonth, getGenreMonths } from './sensorTower/fetchTopApps';
+import { fetchAndStoreGenre, fetchAndStoreMonth, getGenreMonths, getGenreWeeks, fetchAndStoreWeek } from './sensorTower/fetchTopApps';
+import { runAllGenreInsights, runInsightsPipeline } from './insights/pipeline';
 
 admin.initializeApp();
 
@@ -136,7 +137,7 @@ export const compAnalysisApi = onRequest(
         }
 
         case 'fetch/plan': {
-          const { genreIds } = req.body || {};
+          const { genreIds, refetch } = req.body || {};
           if (!genreIds || !Array.isArray(genreIds) || genreIds.length === 0) {
             sendError(res, 400, 'genreIds array is required');
             return;
@@ -147,10 +148,22 @@ export const compAnalysisApi = onRequest(
             if (gDoc.exists) {
               const gData = gDoc.data() as any;
               const genre = { id: gDoc.id, ...gData };
+              const allMonths = getGenreMonths(genre);
+
+              const existingSnaps = await db.collection('snapshots')
+                .where('genreId', '==', gid).get();
+              const existingMonthKeys = new Set(
+                existingSnaps.docs.filter(d => d.data().month != null).map(d => d.data().month as string)
+              );
+
+              const monthsToUse = refetch
+                ? allMonths.filter(m => existingMonthKeys.has(m.month))
+                : allMonths.filter(m => !existingMonthKeys.has(m.month));
+
               plan.push({
                 genreId: gDoc.id,
                 genreName: gData.name,
-                months: getGenreMonths(genre),
+                months: monthsToUse,
               });
             }
           }
@@ -177,6 +190,59 @@ export const compAnalysisApi = onRequest(
             authTokenMonth
           );
           sendSuccess(res, result);
+          return;
+        }
+
+        case 'fetch/week-plan': {
+          const { genreIds: weekGenreIds } = req.body || {};
+          if (!weekGenreIds || !Array.isArray(weekGenreIds) || weekGenreIds.length === 0) {
+            sendError(res, 400, 'genreIds array is required');
+            return;
+          }
+          const weekPlan: { genreId: string; genreName: string; weeks: { week: string; startDate: string; endDate: string }[] }[] = [];
+          for (const gid of weekGenreIds) {
+            const gDoc = await db.collection('genres').doc(gid).get();
+            if (gDoc.exists) {
+              const gData = gDoc.data() as any;
+              const genre = { id: gDoc.id, ...gData };
+              const allWeeks = getGenreWeeks(genre);
+
+              const existingSnaps = await db.collection('snapshots')
+                .where('genreId', '==', gid)
+                .where('granularity', '==', 'week').get();
+              const existingWeeks = new Set(existingSnaps.docs.map(d => d.data().week as string));
+              const missingWeeks = allWeeks.filter(w => !existingWeeks.has(w.week));
+
+              weekPlan.push({
+                genreId: gDoc.id,
+                genreName: gData.name,
+                weeks: missingWeeks,
+              });
+            }
+          }
+          sendSuccess(res, { plan: weekPlan });
+          return;
+        }
+
+        case 'fetch/week': {
+          const { genreId: weekGenreId, week: fetchWeek, startDate: weekStart, endDate: weekEnd } = req.body;
+          if (!weekGenreId || !fetchWeek || !weekStart || !weekEnd) {
+            sendError(res, 400, 'genreId, week, startDate, and endDate are required');
+            return;
+          }
+          const weekAuthToken = sensorTowerAuthToken.value().trim();
+          const weekDoc = await db.collection('genres').doc(weekGenreId).get();
+          if (!weekDoc.exists) {
+            sendError(res, 404, 'Genre not found');
+            return;
+          }
+          const weekGenre = { id: weekDoc.id, ...weekDoc.data() } as any;
+          const weekResult = await fetchAndStoreWeek(
+            weekGenre,
+            { week: fetchWeek, startDate: weekStart, endDate: weekEnd },
+            weekAuthToken
+          );
+          sendSuccess(res, weekResult);
           return;
         }
 
@@ -276,6 +342,27 @@ export const compAnalysisApi = onRequest(
           }, { merge: true });
           sendSuccess(res, { success: true });
           return;
+        }
+
+        case 'insights/generate': {
+          const granularity = (req.body?.granularity || 'month') as 'month' | 'week';
+          const result = await runAllGenreInsights(granularity);
+          return sendSuccess(res, result);
+        }
+
+        case 'insights/generate-genre': {
+          const { genreId, genreName, granularity: gran } = req.body || {};
+          if (!genreId || !genreName) {
+            return sendError(res, 400, 'genreId and genreName are required');
+          }
+          const result = await runInsightsPipeline(
+            { id: genreId, name: genreName },
+            (gran || 'month') as 'month' | 'week'
+          );
+          return sendSuccess(res, {
+            scored: result.scored,
+            topApps: result.topApps.map(a => ({ appId: a.appId, appName: a.appName, score: a.score })),
+          });
         }
 
         default:
