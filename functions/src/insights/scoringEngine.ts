@@ -39,6 +39,11 @@ export interface ScoredApp {
 // Internal helpers
 // ---------------------------------------------------------------------------
 
+/**
+ * Compute percent changes between consecutive sorted periods.
+ * Keys must be lexicographically sortable (e.g., "2025-01", "2025-W03").
+ * When prev is 0 and curr > 0, returns +100% (capped).
+ */
 function percentChanges(
   valuesByPeriod: Record<string, number>
 ): { period: string; pctChange: number }[] {
@@ -89,6 +94,8 @@ export function computeRevenueAcceleration(revenueByPeriod: Record<string, numbe
 // Sub-Score 2: Download Momentum (0-25)
 // ---------------------------------------------------------------------------
 
+// Same algorithm as revenue acceleration. Separate function so it can
+// diverge later if download-specific tuning is needed.
 export function computeDownloadMomentum(downloadsByPeriod: Record<string, number>): number {
   return computeRevenueAcceleration(downloadsByPeriod);
 }
