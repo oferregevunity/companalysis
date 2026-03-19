@@ -31,18 +31,25 @@ export interface AppData {
   storeRevenue: number;
 }
 
+export type RisingStatus = 'Rising 3' | 'Rising 2' | 'Rising 1' | 'NOT';
+
 export interface ComparisonRow {
   appName: string;
   appId: string;
   publisherName: string;
   genreName: string;
   genreId: string;
+  allGenres: { id: string; name: string }[];
   iosAppId: string | null;
   androidAppId: string | null;
   revenueByMonth: Record<string, number>;
   downloadsByMonth: Record<string, number>;
   percentChanges: Record<string, number | null>;
+  downloadPercentChanges: Record<string, number | null>;
   dailyRevenue: number;
+  dailyDownloads: number;
+  risingStatus: RisingStatus;
+  risingStatusDownloads: RisingStatus;
   comment?: string;
 }
 
@@ -53,4 +60,39 @@ export interface FetchLog {
   status: 'running' | 'completed' | 'failed';
   genresProcessed: string[];
   errors: string[];
+}
+
+export interface SubScores {
+  revenueAcceleration: number;
+  downloadMomentum: number;
+  anomalyScore: number;
+  crossMetricConvergence: number;
+}
+
+export interface InsightGame {
+  appId: string;
+  appName: string;
+  publisherName: string;
+  rank: number;
+  score: number;
+  subScores: SubScores;
+  explanation: string;
+}
+
+export interface InsightWatchItem {
+  appId: string;
+  appName: string;
+  publisherName: string;
+  score: number;
+  reason: string;
+}
+
+export interface GenreInsightDoc {
+  genreId: string;
+  period: string;
+  granularity: 'month' | 'week';
+  generatedAt: Date;
+  summary: string;
+  games: InsightGame[];
+  watchList: InsightWatchItem[];
 }

@@ -53,14 +53,24 @@ export const api = {
       genreIds && genreIds.length > 0 ? { genreIds } : {}
     ),
 
-  fetchPlan: (genreIds: string[]) =>
+  fetchPlan: (genreIds: string[], refetch?: boolean) =>
     apiCall<{ plan: { genreId: string; genreName: string; months: { month: string; startDate: string; endDate: string }[] }[] }>(
-      'fetch/plan', { genreIds }
+      'fetch/plan', { genreIds, refetch: !!refetch }
     ),
 
   fetchMonth: (genreId: string, month: string, startDate: string, endDate: string) =>
     apiCall<{ success: boolean; appCount: number; error?: string }>(
       'fetch/month', { genreId, month, startDate, endDate }
+    ),
+
+  fetchWeekPlan: (genreIds: string[]) =>
+    apiCall<{ plan: { genreId: string; genreName: string; weeks: { week: string; startDate: string; endDate: string }[] }[] }>(
+      'fetch/week-plan', { genreIds }
+    ),
+
+  fetchWeek: (genreId: string, week: string, startDate: string, endDate: string) =>
+    apiCall<{ success: boolean; appCount: number; error?: string }>(
+      'fetch/week', { genreId, week, startDate, endDate }
     ),
 
   deleteAnalysis: (genreId: string) =>
@@ -69,3 +79,7 @@ export const api = {
   saveComment: (appId: string, genreId: string, comment: string) =>
     apiCall('comments/save', { appId, genreId, comment }),
 };
+
+export async function generateInsights(granularity: 'month' | 'week' = 'month') {
+  return apiCall('insights/generate', { granularity });
+}
