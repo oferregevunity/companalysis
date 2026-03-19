@@ -3,6 +3,7 @@ import { getFirestore } from 'firebase-admin/firestore';
 import { onRequest } from 'firebase-functions/v2/https';
 import { sensorTowerAuthToken } from './sensorTower/client';
 import { fetchAndStoreGenre, fetchAndStoreMonth, getGenreMonths, getGenreWeeks, fetchAndStoreWeek } from './sensorTower/fetchTopApps';
+import { createSavedView, inviteToSavedView } from './api/savedViews';
 import { runAllGenreInsights, runInsightsPipeline } from './insights/pipeline';
 
 admin.initializeApp();
@@ -346,6 +347,36 @@ export const compAnalysisApi = onRequest(
             comment: comment || '',
             updatedAt: admin.firestore.FieldValue.serverTimestamp(),
           }, { merge: true });
+          sendSuccess(res, { success: true });
+          return;
+        }
+
+        case 'savedViews/create': {
+          const user = await getAuthUser(req);
+          if (!user) {
+            sendError(res, 401, 'Unauthorized');
+            return;
+          }
+          const result = await createSavedView(db, user, req.body || {});
+          if ('error' in result) {
+            sendError(res, result.status, result.error);
+            return;
+          }
+          sendSuccess(res, { id: result.id });
+          return;
+        }
+
+        case 'savedViews/invite': {
+          const user = await getAuthUser(req);
+          if (!user) {
+            sendError(res, 401, 'Unauthorized');
+            return;
+          }
+          const inv = await inviteToSavedView(db, user, req.body || {});
+          if ('error' in inv) {
+            sendError(res, inv.status, inv.error);
+            return;
+          }
           sendSuccess(res, { success: true });
           return;
         }

@@ -4,20 +4,32 @@ import { formatMonth } from './dataProcessing';
 export function exportToCsv(
   data: ComparisonRow[],
   months: string[],
-  _mode: string,
+  metricView: string,
   filename: string
 ) {
   const rows: string[][] = [];
   const hasMultipleGenres = new Set(data.map(r => r.genreName)).size > 1;
+  const isRevenue = metricView !== 'downloads';
 
   const header = ['#', 'App Name', 'Publisher'];
   if (hasMultipleGenres) header.push('Genre');
+  header.push('Rising (Rev)', 'Rising (DL)');
+
   for (let i = 0; i < months.length; i++) {
     const label = formatMonth(months[i]);
-    header.push(`${label} Revenue`);
-    if (i > 0) header.push(`${label} % Change`);
+    if (isRevenue) {
+      header.push(`${label} Revenue`);
+      if (i > 0) header.push(`${label} Rev %`);
+    } else {
+      header.push(`${label} Downloads`);
+      if (i > 0) header.push(`${label} DL %`);
+    }
   }
-  header.push('Daily Revenue', 'App Store ID', 'Google Play ID');
+  header.push(
+    isRevenue ? 'Daily Revenue' : 'Daily Downloads',
+    'App Store ID',
+    'Google Play ID'
+  );
   rows.push(header);
 
   data.forEach((row, idx) => {
@@ -28,17 +40,26 @@ export function exportToCsv(
     ];
 
     if (hasMultipleGenres) csvRow.push(row.genreName);
+    csvRow.push(row.risingStatus, row.risingStatusDownloads);
 
     for (let i = 0; i < months.length; i++) {
-      csvRow.push(String(row.revenueByMonth[months[i]]?.toFixed(2) ?? '0'));
-      if (i > 0) {
-        const val = row.percentChanges[months[i]];
-        csvRow.push(val !== null && val !== undefined ? val.toFixed(1) + '%' : '');
+      if (isRevenue) {
+        csvRow.push(String(row.revenueByMonth[months[i]]?.toFixed(2) ?? '0'));
+        if (i > 0) {
+          const val = row.percentChanges[months[i]];
+          csvRow.push(val !== null && val !== undefined ? val.toFixed(1) + '%' : '');
+        }
+      } else {
+        csvRow.push(String(row.downloadsByMonth[months[i]]?.toFixed(0) ?? '0'));
+        if (i > 0) {
+          const val = row.downloadPercentChanges[months[i]];
+          csvRow.push(val !== null && val !== undefined ? val.toFixed(1) + '%' : '');
+        }
       }
     }
 
     csvRow.push(
-      String(row.dailyRevenue.toFixed(2)),
+      isRevenue ? String(row.dailyRevenue.toFixed(2)) : String(row.dailyDownloads.toFixed(0)),
       row.iosAppId || '',
       row.androidAppId || '',
     );

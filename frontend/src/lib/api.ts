@@ -1,4 +1,5 @@
 import { auth } from './firebase';
+import type { SavedViewPayload, SavedViewVisibility } from '../types/savedView';
 
 const API_BASE = '/api';
 
@@ -78,6 +79,18 @@ export const api = {
 
   saveComment: (appId: string, genreId: string, comment: string) =>
     apiCall('comments/save', { appId, genreId, comment }),
+
+  savedViews: {
+    create: (args: {
+      name: string;
+      payload: SavedViewPayload;
+      visibility: SavedViewVisibility;
+      sharedWithEmails?: string[];
+    }) => apiCall<{ id: string }>('savedViews/create', args),
+
+    invite: (presetId: string, email: string) =>
+      apiCall<{ success: boolean }>('savedViews/invite', { presetId, email }),
+  },
 };
 
 export async function generateInsights(granularity: 'month' | 'week' = 'month') {

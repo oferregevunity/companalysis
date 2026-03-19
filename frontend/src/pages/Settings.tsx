@@ -1,7 +1,16 @@
 import { useState, useMemo } from 'react';
 import { useGenres } from '../hooks/useGenres';
 import { useFetchLogs } from '../hooks/useFetchLogs';
+import { useFetchProgress } from '../hooks/useFetchProgress';
+import { useGenreDataStatus } from '../hooks/useGenreDataStatus';
 import { api } from '../lib/api';
+import { fetchStore } from '../lib/fetchStore';
+import { formatMonth, formatWeek } from '../lib/dataProcessing';
+
+function formatPeriod(s: string): string {
+  if (!s) return '';
+  return s.includes('W') ? formatWeek(s) : formatMonth(s);
+}
 
 const GENRE_COLORS = [
   { bg: '#e8f0fe', text: '#1a73e8', border: '#aecbfa' },
@@ -64,6 +73,7 @@ const TIMELINE_OPTIONS = [
 export default function Settings() {
   const { genres, loading: genresLoading } = useGenres();
   const { logs, loading: logsLoading } = useFetchLogs(20);
+  const { statusMap } = useGenreDataStatus(genres.map(g => g.id));
 
   const [showAddForm, setShowAddForm] = useState(false);
   const [selectedPreset, setSelectedPreset] = useState('');
@@ -75,9 +85,7 @@ export default function Settings() {
   const [saving, setSaving] = useState(false);
 
   const [selectedFetchIds, setSelectedFetchIds] = useState<Set<string>>(new Set());
-  const [fetching, setFetching] = useState(false);
-  const [fetchMessage, setFetchMessage] = useState('');
-  const [fetchProgress, setFetchProgress] = useState<{ current: number; total: number; label: string } | null>(null);
+  const fetchProgress = useFetchProgress();
 
   const handlePresetChange = (label: string) => {
     setSelectedPreset(label);
@@ -180,51 +188,103 @@ export default function Settings() {
     else setSelectedFetchIds(new Set(genres.map((g) => g.id)));
   };
 
-  const handleFetchSelected = async () => {
-    if (selectedFetchIds.size === 0) return;
-    setFetching(true);
-    setFetchMessage('');
-    setFetchProgress(null);
+  const runMonthlyFetch = async (refetch: boolean) => {
+    if (selectedFetchIds.size === 0 || fetchProgress.active) return;
+    fetchStore.clear();
+
+    const ids = Array.from(selectedFetchIds);
+    const { plan } = await api.fetchPlan(ids, refetch);
+
+    const allSteps: { genreId: string; genreName: string; month: string; startDate: string; endDate: string }[] = [];
+    for (const g of plan) {
+      for (const m of g.months) {
+        allSteps.push({ genreId: g.genreId, genreName: g.genreName, ...m });
+      }
+    }
+
+    if (allSteps.length === 0) {
+      fetchStore.finish(refetch ? 'No existing months to refetch' : 'All months are already fetched — nothing to do');
+      return;
+    }
+
+    fetchStore.start(allSteps.length);
+    let completed = 0;
+
+    for (const step of allSteps) {
+      fetchStore.progress(completed + 1, `${step.genreName} ${step.month}`);
+      try {
+        const result = await api.fetchMonth(step.genreId, step.month, step.startDate, step.endDate);
+        if (!result.success && result.error) {
+          fetchStore.addError(result.error);
+        }
+      } catch (err) {
+        fetchStore.addError(`${step.genreName} ${step.month}: ${err instanceof Error ? err.message : 'Failed'}`);
+      }
+      completed++;
+    }
+
+    const errCount = fetchStore.getState().errors.length;
+    if (errCount === 0) {
+      fetchStore.finish(`Successfully ${refetch ? 'refetched' : 'fetched'} ${allSteps.length} months across ${plan.length} genre(s)`);
+    } else {
+      fetchStore.finish(`Completed with ${errCount} error(s)`);
+    }
+    setSelectedFetchIds(new Set());
+  };
+
+  const handleFetchSelected = () => runMonthlyFetch(false).catch((error) => {
+    fetchStore.finish(`Fetch failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+  });
+
+  const handleRefetchSelected = () => runMonthlyFetch(true).catch((error) => {
+    fetchStore.finish(`Refetch failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+  });
+
+  const handleFetchWeekly = async () => {
+    if (selectedFetchIds.size === 0 || fetchProgress.active) return;
+    fetchStore.clear();
 
     try {
       const ids = Array.from(selectedFetchIds);
-      const { plan } = await api.fetchPlan(ids);
+      const { plan } = await api.fetchWeekPlan(ids);
 
-      const allSteps: { genreId: string; genreName: string; month: string; startDate: string; endDate: string }[] = [];
+      const allSteps: { genreId: string; genreName: string; week: string; startDate: string; endDate: string }[] = [];
       for (const g of plan) {
-        for (const m of g.months) {
-          allSteps.push({ genreId: g.genreId, genreName: g.genreName, ...m });
+        for (const w of g.weeks) {
+          allSteps.push({ genreId: g.genreId, genreName: g.genreName, ...w });
         }
       }
 
-      const errors: string[] = [];
+      if (allSteps.length === 0) {
+        fetchStore.finish('All weeks are already fetched — nothing to do');
+        return;
+      }
+
+      fetchStore.start(allSteps.length);
       let completed = 0;
 
       for (const step of allSteps) {
-        setFetchProgress({ current: completed + 1, total: allSteps.length, label: `${step.genreName} ${step.month}` });
+        fetchStore.progress(completed + 1, `${step.genreName} ${step.week}`);
         try {
-          const result = await api.fetchMonth(step.genreId, step.month, step.startDate, step.endDate);
+          const result = await api.fetchWeek(step.genreId, step.week, step.startDate, step.endDate);
           if (!result.success && result.error) {
-            errors.push(result.error);
+            fetchStore.addError(result.error);
           }
         } catch (err) {
-          errors.push(`${step.genreName} ${step.month}: ${err instanceof Error ? err.message : 'Failed'}`);
+          fetchStore.addError(`${step.genreName} ${step.week}: ${err instanceof Error ? err.message : 'Failed'}`);
         }
         completed++;
       }
 
-      setFetchProgress(null);
-      if (errors.length === 0) {
-        setFetchMessage(`Successfully fetched ${allSteps.length} months across ${plan.length} genre(s)`);
+      const errCount = fetchStore.getState().errors.length;
+      if (errCount === 0) {
+        fetchStore.finish(`Successfully fetched ${allSteps.length} weeks across ${plan.length} genre(s)`);
       } else {
-        setFetchMessage(`Completed with ${errors.length} error(s): ${errors.slice(0, 3).join('; ')}${errors.length > 3 ? '...' : ''}`);
+        fetchStore.finish(`Completed with ${errCount} error(s)`);
       }
       setSelectedFetchIds(new Set());
     } catch (error) {
-      setFetchProgress(null);
-      setFetchMessage(`Fetch failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
-    } finally {
-      setFetching(false);
+      fetchStore.finish(`Fetch failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   };
 
@@ -319,10 +379,11 @@ export default function Settings() {
           <div className="bg-white rounded-xl border border-[#dadce0] p-8 text-center text-[13px] text-[#5f6368]">No genres configured yet.</div>
         ) : (
           <div className="bg-white rounded-xl border border-[#dadce0] overflow-hidden shadow-[0_1px_2px_0_rgba(60,64,67,0.1)]">
-            <div className="grid grid-cols-[1fr_80px_70px_80px_auto] items-center gap-3 px-4 py-2 border-b border-[#e8eaed] bg-[#f8f9fa]">
+            <div className="grid grid-cols-[1fr_80px_70px_160px_80px_auto] items-center gap-3 px-4 py-2 border-b border-[#e8eaed] bg-[#f8f9fa]">
               <span className="text-[11px] font-semibold text-[#5f6368] uppercase tracking-wide">Genre</span>
               <span className="text-[11px] font-semibold text-[#5f6368] uppercase tracking-wide">Country</span>
               <span className="text-[11px] font-semibold text-[#5f6368] uppercase tracking-wide">Timeline</span>
+              <span className="text-[11px] font-semibold text-[#5f6368] uppercase tracking-wide">Last Updated</span>
               <span className="text-[11px] font-semibold text-[#5f6368] uppercase tracking-wide">Status</span>
               <span />
             </div>
@@ -378,13 +439,32 @@ export default function Settings() {
 
               return (
                 <div key={genre.id}
-                  className={`grid grid-cols-[1fr_80px_70px_80px_auto] items-center gap-3 px-4 py-2.5 ${i > 0 ? 'border-t border-[#e8eaed]' : ''} hover:bg-[#f8f9fa] transition-colors`}>
+                  className={`grid grid-cols-[1fr_80px_70px_160px_80px_auto] items-center gap-3 px-4 py-2.5 ${i > 0 ? 'border-t border-[#e8eaed]' : ''} hover:bg-[#f8f9fa] transition-colors`}>
                   <div>
                     <span className="text-[13px] font-medium text-[#202124]">{genre.name}</span>
                     <span className="text-[11px] text-[#80868b] ml-2">iOS: {genre.categoryIds.ios} &middot; Android: {genre.categoryIds.android}</span>
                   </div>
                   <span className="text-[12px] text-[#3c4043]">{genre.country || 'US'}</span>
                   <span className="text-[12px] text-[#3c4043]">{genre.monthsBack || 6}mo</span>
+                  {(() => {
+                    const status = statusMap[genre.id];
+                    const periods = status?.months?.filter(Boolean) ?? [];
+                    if (!status || periods.length === 0) {
+                      return <span className="text-[11px] text-[#80868b] italic">No data</span>;
+                    }
+                    const dateStr = status.lastFetchedAt
+                      ? status.lastFetchedAt.toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+                      : '—';
+                    const start = formatPeriod(periods[0]);
+                    const end = formatPeriod(periods[periods.length - 1]);
+                    const range = start && end ? `${start} → ${end}` : periods.join(', ');
+                    return (
+                      <div className="leading-tight">
+                        <span className="text-[11px] text-[#3c4043] block">{dateStr}</span>
+                        <span className="text-[10px] text-[#80868b]">{range} ({periods.length})</span>
+                      </div>
+                    );
+                  })()}
                   <button onClick={() => handleToggleActive(genre.id, genre.active)}
                     className={`px-2 py-0.5 text-[11px] font-medium rounded-full transition-colors ${
                       genre.active ? 'bg-[#e6f4ea] text-[#137333] hover:bg-[#ceead6]' : 'bg-[#f1f3f4] text-[#5f6368] hover:bg-[#e8eaed]'
@@ -421,7 +501,7 @@ export default function Settings() {
         <section className="mb-10">
           <h2 className="text-[15px] font-semibold text-[#202124] mb-3">Fetch Data</h2>
           <div className="bg-white rounded-xl border border-[#dadce0] p-4 shadow-[0_1px_2px_0_rgba(60,64,67,0.1)]">
-            <p className="text-[12px] text-[#5f6368] mb-3">Select genres to pull data from Sensor Tower:</p>
+            <p className="text-[12px] text-[#5f6368] mb-3">Select genres to fetch missing months from Sensor Tower:</p>
             <div className="flex items-center gap-2 flex-wrap mb-4">
               {genres.map((genre) => {
                 const isSelected = selectedFetchIds.has(genre.id);
@@ -448,15 +528,24 @@ export default function Settings() {
                 className="px-3 py-[7px] text-[12px] font-medium text-[#5f6368] border border-[#dadce0] rounded-lg hover:bg-[#f1f3f4] transition-colors bg-white">
                 {selectedFetchIds.size === genres.length ? 'Deselect All' : 'Select All'}
               </button>
-              <button onClick={handleFetchSelected} disabled={fetching || selectedFetchIds.size === 0}
+              <button onClick={handleFetchSelected} disabled={fetchProgress.active || selectedFetchIds.size === 0}
                 className="inline-flex items-center gap-1.5 px-4 py-[7px] bg-primary-600 text-white rounded-lg text-[12px] font-medium hover:bg-primary-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors shadow-[0_1px_2px_0_rgba(60,64,67,0.3)]">
-                {fetching && <div className="w-3.5 h-3.5 border-[1.5px] border-white/30 border-t-white rounded-full animate-spin" />}
-                {fetching ? 'Fetching...' : `Fetch Data (${selectedFetchIds.size})`}
+                {fetchProgress.active && <div className="w-3.5 h-3.5 border-[1.5px] border-white/30 border-t-white rounded-full animate-spin" />}
+                {fetchProgress.active ? 'Fetching...' : `Fetch Monthly (${selectedFetchIds.size})`}
+              </button>
+              <button onClick={handleFetchWeekly} disabled={fetchProgress.active || selectedFetchIds.size === 0}
+                className="inline-flex items-center gap-1.5 px-4 py-[7px] bg-white text-primary-700 border border-primary-300 rounded-lg text-[12px] font-medium hover:bg-primary-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
+                {fetchProgress.active ? 'Fetching...' : `Fetch Weekly (${selectedFetchIds.size})`}
+              </button>
+              <button onClick={handleRefetchSelected} disabled={fetchProgress.active || selectedFetchIds.size === 0}
+                className="inline-flex items-center gap-1.5 px-4 py-[7px] bg-white text-[#5f6368] border border-[#dadce0] rounded-lg text-[12px] font-medium hover:bg-[#f1f3f4] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                title="Re-fetch existing months for selected genres">
+                {fetchProgress.active ? 'Fetching...' : `Refetch Monthly (${selectedFetchIds.size})`}
               </button>
             </div>
           </div>
 
-          {fetchProgress && (
+          {fetchProgress.active && (
             <div className="mt-3 bg-white border border-[#dadce0] rounded-lg p-4 shadow-[0_1px_2px_0_rgba(60,64,67,0.1)]">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-[13px] font-medium text-[#202124]">
@@ -468,16 +557,16 @@ export default function Settings() {
               </div>
               <div className="w-full bg-[#e8eaed] rounded-full h-1.5">
                 <div className="bg-primary-600 h-1.5 rounded-full transition-all duration-300"
-                  style={{ width: `${(fetchProgress.current / fetchProgress.total) * 100}%` }} />
+                  style={{ width: `${fetchProgress.total > 0 ? (fetchProgress.current / fetchProgress.total) * 100 : 0}%` }} />
               </div>
             </div>
           )}
 
-          {fetchMessage && !fetchProgress && (
+          {!fetchProgress.active && fetchProgress.doneMessage && (
             <div className={`mt-3 px-4 py-3 rounded-lg text-[13px] ${
-              fetchMessage.includes('failed') || fetchMessage.includes('error') ? 'bg-[#fce8e6] text-[#c5221f]' : 'bg-[#e6f4ea] text-[#137333]'
+              fetchProgress.doneMessage.includes('failed') || fetchProgress.doneMessage.includes('error') ? 'bg-[#fce8e6] text-[#c5221f]' : 'bg-[#e6f4ea] text-[#137333]'
             }`}>
-              {fetchMessage}
+              {fetchProgress.doneMessage}
             </div>
           )}
         </section>

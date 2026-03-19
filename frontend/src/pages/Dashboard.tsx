@@ -1,5 +1,7 @@
-import { useState, useMemo, useCallback, useEffect } from 'react';
+import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
+import { doc, getDoc, deleteDoc } from 'firebase/firestore';
+import { db } from '../lib/firebase';
 import {
   useReactTable,
   getCoreRowModel,
@@ -20,6 +22,11 @@ import { getHeatmapBg, getHeatmapText } from '../lib/colorScale';
 import { exportToCsv } from '../lib/csvExport';
 import { api } from '../lib/api';
 import type { ComparisonRow, RisingStatus } from '../types';
+import type { SavedViewPayload } from '../types/savedView';
+import { buildAppUrl, queryStringToPayload, getPresetIdFromSearch } from '../lib/savedViewUrl';
+import { applySavedViewPayload, hasUrlViewState } from '../lib/dashboardSavedViewApply';
+import { SaveViewModal } from '../components/SaveViewModal';
+import { useSavedViews, type SavedViewDoc } from '../hooks/useSavedViews';
 
 const columnHelper = createColumnHelper<ComparisonRow>();
 const PAGE_SIZE_OPTIONS = [50, 100, 200, 500];
@@ -190,16 +197,14 @@ export default function Dashboard() {
   const [dateTo, setDateTo] = useState<string>('');
   const [granularity, setGranularity] = useState<Granularity>('month');
   const [metricView, setMetricView] = useState<MetricView>('revenue');
+  const [pagination, setPagination] = useState({ pageIndex: 0, pageSize: 50 });
+  const [saveViewModalOpen, setSaveViewModalOpen] = useState(false);
+  const [savedViewsOpen, setSavedViewsOpen] = useState(false);
+  const [linkToast, setLinkToast] = useState<string | null>(null);
+  const [presetLoadError, setPresetLoadError] = useState<string | null>(null);
 
-  const [searchParams, setSearchParams] = useSearchParams();
-  useEffect(() => {
-    const q = searchParams.get('search');
-    if (q) {
-      setGlobalFilter(q);
-      searchParams.delete('search');
-      setSearchParams(searchParams, { replace: true });
-    }
-  }, []);
+  const [, setSearchParams] = useSearchParams();
+  const urlHydratedRef = useRef(false);
 
   const switchGranularity = (g: Granularity) => {
     setGranularity(g);
@@ -208,12 +213,140 @@ export default function Dashboard() {
   };
 
   const { favorites, toggleFavorite } = useFavorites();
+  const { myViews, sharedWithMe } = useSavedViews();
 
-  const initialized = useState(false);
-  if (!initialized[0] && genres.length > 0 && selectedIds.size === 0) {
-    initialized[1](true);
-    setSelectedIds(new Set(genres.map(g => g.id)));
-  }
+  const applyPayload = useCallback(
+    (payload: SavedViewPayload) => {
+      applySavedViewPayload(payload, genres, {
+        setSelectedIds,
+        setSorting,
+        setGlobalFilter,
+        setSortMetric,
+        setSelectedRising,
+        setRisingThreshold,
+        setShowFavoritesOnly,
+        setDateFrom,
+        setDateTo,
+        setGranularity,
+        setMetricView,
+        setPagination,
+      });
+    },
+    [genres]
+  );
+
+  const buildCurrentPayload = useCallback((): SavedViewPayload => {
+    return {
+      genres: [...selectedIds],
+      sorting,
+      globalFilter,
+      sortMetric,
+      rising: [...selectedRising],
+      risingThreshold,
+      favoritesOnly: showFavoritesOnly,
+      dateFrom,
+      dateTo,
+      granularity,
+      metricView,
+      pageSize: pagination.pageSize,
+    };
+  }, [
+    selectedIds,
+    sorting,
+    globalFilter,
+    sortMetric,
+    selectedRising,
+    risingThreshold,
+    showFavoritesOnly,
+    dateFrom,
+    dateTo,
+    granularity,
+    metricView,
+    pagination.pageSize,
+  ]);
+
+  const openSavedView = useCallback(
+    (view: SavedViewDoc) => {
+      setPresetLoadError(null);
+      applyPayload(view.payload);
+      setSearchParams({ preset: view.id }, { replace: true });
+      setSavedViewsOpen(false);
+    },
+    [applyPayload, setSearchParams]
+  );
+
+  const deleteSavedView = useCallback(
+    async (id: string) => {
+      try {
+        await deleteDoc(doc(db, 'savedViews', id));
+        const cur = new URLSearchParams(window.location.search).get('preset');
+        if (cur === id) setSearchParams({}, { replace: true });
+      } catch {
+        setLinkToast('Could not delete view');
+      }
+    },
+    [setSearchParams]
+  );
+
+  useEffect(() => {
+    if (genresLoading || genres.length === 0 || urlHydratedRef.current) return;
+
+    if (typeof window !== 'undefined') {
+      const p = new URLSearchParams(window.location.search.slice(1));
+      if (p.has('search')) {
+        setGlobalFilter(p.get('search') || '');
+        p.delete('search');
+        const qs = p.toString();
+        window.history.replaceState(null, '', window.location.pathname + (qs ? `?${qs}` : ''));
+      }
+    }
+
+    urlHydratedRef.current = true;
+
+    const raw = typeof window !== 'undefined' ? window.location.search : '';
+    const presetId = getPresetIdFromSearch(raw);
+    if (presetId) {
+      void (async () => {
+        try {
+          const snap = await getDoc(doc(db, 'savedViews', presetId));
+          if (!snap.exists()) {
+            setPresetLoadError('This link is invalid or you don’t have access.');
+            setSelectedIds(new Set(genres.map((g) => g.id)));
+            setSearchParams({}, { replace: true });
+            return;
+          }
+          const d = snap.data() as Record<string, unknown>;
+          const p = d?.payload;
+          if (!p || typeof p !== 'object') {
+            setPresetLoadError('This link is invalid or you don’t have access.');
+            setSelectedIds(new Set(genres.map((g) => g.id)));
+            setSearchParams({}, { replace: true });
+            return;
+          }
+          setPresetLoadError(null);
+          applyPayload(p as SavedViewPayload);
+        } catch {
+          setPresetLoadError('This link is invalid or you don’t have access.');
+          setSelectedIds(new Set(genres.map((g) => g.id)));
+          setSearchParams({}, { replace: true });
+        }
+      })();
+      return;
+    }
+
+    if (hasUrlViewState(raw)) {
+      applyPayload(queryStringToPayload(raw));
+      return;
+    }
+
+    setSelectedIds(new Set(genres.map((g) => g.id)));
+  }, [genresLoading, genres, applyPayload]);
+
+  useEffect(() => {
+    if (!linkToast) return;
+    const t = window.setTimeout(() => setLinkToast(null), 2500);
+    return () => window.clearTimeout(t);
+  }, [linkToast]);
 
   const selectedGenres = useMemo(
     () => genres.filter(g => selectedIds.has(g.id)),
@@ -452,14 +585,14 @@ export default function Dashboard() {
   const table = useReactTable({
     data: filteredData,
     columns,
-    state: { sorting, globalFilter },
+    state: { sorting, globalFilter, pagination },
     onSortingChange: setSorting,
     onGlobalFilterChange: setGlobalFilter,
+    onPaginationChange: setPagination,
     getCoreRowModel: getCoreRowModel(),
     getSortedRowModel: getSortedRowModel(),
     getFilteredRowModel: getFilteredRowModel(),
     getPaginationRowModel: getPaginationRowModel(),
-    initialState: { pagination: { pageSize: 50 } },
     globalFilterFn: (row, _columnId, filterValue) => {
       const q = filterValue.toLowerCase();
       return (
@@ -480,6 +613,12 @@ export default function Dashboard() {
         <h1 className="text-[22px] font-semibold text-[#202124] tracking-[-0.01em]">Dashboard</h1>
         <p className="text-[13px] text-[#5f6368] mt-0.5">Gaming market competitor analysis</p>
       </div>
+
+      {presetLoadError && (
+        <div className="mb-3 text-[12px] text-[#c5221f] bg-[#fce8e6] border border-[#f4c7c3] rounded-lg px-3 py-2">
+          {presetLoadError}
+        </div>
+      )}
 
       {/* Genre pills */}
       {!genresLoading && genres.length > 0 && (
@@ -562,6 +701,27 @@ export default function Dashboard() {
           </>
         )}
 
+        <button
+          type="button"
+          onClick={async () => {
+            try {
+              await navigator.clipboard.writeText(buildAppUrl(buildCurrentPayload()));
+              setLinkToast('Link copied to clipboard');
+            } catch {
+              setLinkToast('Could not copy link');
+            }
+          }}
+          className="inline-flex items-center gap-1.5 px-3 py-[6px] bg-white border border-[#dadce0] rounded-lg text-[12px] font-medium text-[#3c4043] hover:bg-[#f8f9fa] hover:shadow-sm transition-all duration-150"
+        >
+          Copy link
+        </button>
+        <button
+          type="button"
+          onClick={() => setSaveViewModalOpen(true)}
+          className="inline-flex items-center gap-1.5 px-3 py-[6px] bg-white border border-[#dadce0] rounded-lg text-[12px] font-medium text-[#3c4043] hover:bg-[#f8f9fa] hover:shadow-sm transition-all duration-150"
+        >
+          Save view
+        </button>
         {filteredData.length > 0 && (
           <button
             onClick={() => exportToCsv(filteredData, filteredMonths, metricView, `competitor-analysis-${new Date().toISOString().slice(0, 10)}.csv`)}
@@ -578,6 +738,83 @@ export default function Dashboard() {
       {/* Toolbar row 2: Metric toggle + Sort toggle + Rising filter + Favorites + Threshold */}
       {data.length > 0 && (
         <div className="flex items-center gap-2 mb-4 flex-wrap">
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setSavedViewsOpen((o) => !o)}
+              className="text-[12px] border border-[#dadce0] rounded-lg px-2.5 py-[5px] bg-white text-[#3c4043] focus:outline-none focus:border-primary-500 min-w-[100px] text-left flex items-center justify-between gap-1"
+            >
+              <span>Saved views</span>
+              <svg className={`w-3.5 h-3.5 transition-transform ${savedViewsOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
+            </button>
+            {savedViewsOpen && (
+              <>
+                <div className="fixed inset-0 z-10" onClick={() => setSavedViewsOpen(false)} aria-hidden />
+                <div className="absolute left-0 top-full mt-1 z-20 bg-white border border-[#dadce0] rounded-lg shadow-lg py-1 min-w-[220px] max-h-[min(70vh,320px)] overflow-y-auto">
+                  <div className="px-2 py-1 text-[10px] font-semibold text-[#80868b] uppercase tracking-wide">My views</div>
+                  {myViews.length === 0 && (
+                    <div className="px-2 py-1 text-[11px] text-[#80868b]">None yet</div>
+                  )}
+                  {myViews.map((v) => (
+                    <div key={v.id} className="flex items-center gap-1 px-1 hover:bg-[#f8f9fa]">
+                      <button
+                        type="button"
+                        className="flex-1 text-left px-2 py-1.5 text-[12px] text-[#202124]"
+                        onClick={() => openSavedView(v)}
+                      >
+                        {v.name}
+                      </button>
+                      <button
+                        type="button"
+                        className="shrink-0 px-1.5 py-1 text-[10px] text-[#1a73e8] hover:underline"
+                        onClick={async (e) => {
+                          e.stopPropagation();
+                          try {
+                            await navigator.clipboard.writeText(buildAppUrl(buildCurrentPayload(), v.id));
+                            setLinkToast('Preset link copied');
+                          } catch {
+                            setLinkToast('Could not copy');
+                          }
+                        }}
+                      >
+                        Copy
+                      </button>
+                      <button
+                        type="button"
+                        className="shrink-0 px-1.5 py-1 text-[10px] text-[#c5221f] hover:underline"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          void deleteSavedView(v.id);
+                        }}
+                      >
+                        Del
+                      </button>
+                    </div>
+                  ))}
+                  <div className="px-2 py-1 mt-1 text-[10px] font-semibold text-[#80868b] uppercase tracking-wide border-t border-[#e8eaed]">Shared with me</div>
+                  {sharedWithMe.length === 0 && (
+                    <div className="px-2 py-1 text-[11px] text-[#80868b]">None</div>
+                  )}
+                  {sharedWithMe.map((v) => (
+                    <button
+                      key={v.id}
+                      type="button"
+                      className="w-full text-left px-3 py-1.5 text-[12px] hover:bg-[#f8f9fa]"
+                      onClick={() => openSavedView(v)}
+                    >
+                      <span className="text-[#202124]">{v.name}</span>
+                      {v.ownerEmail && (
+                        <span className="block text-[10px] text-[#80868b] truncate">{v.ownerEmail}</span>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+
           <div className="inline-flex rounded-lg border border-[#dadce0] overflow-hidden">
             <button onClick={() => setMetricView('revenue')}
               className={`px-2.5 py-[5px] text-[11px] font-medium transition-colors ${metricView === 'revenue' ? 'bg-primary-50 text-primary-700 border-r border-[#dadce0]' : 'bg-white text-[#5f6368] border-r border-[#dadce0] hover:bg-[#f8f9fa]'}`}>
@@ -760,6 +997,22 @@ export default function Dashboard() {
               </div>
             )}
           </div>
+        </div>
+      )}
+
+      <SaveViewModal
+        open={saveViewModalOpen}
+        onClose={() => setSaveViewModalOpen(false)}
+        initialPayload={buildCurrentPayload()}
+        onSaved={(id) => {
+          setSearchParams({ preset: id }, { replace: true });
+          setLinkToast('View saved');
+        }}
+      />
+
+      {linkToast && (
+        <div className="fixed bottom-6 right-6 z-[100] rounded-lg bg-[#202124] text-white text-[12px] px-4 py-2 shadow-lg">
+          {linkToast}
         </div>
       )}
     </div>

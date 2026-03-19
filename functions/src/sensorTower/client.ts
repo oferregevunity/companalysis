@@ -62,6 +62,7 @@ export interface FetchTopAppsParams {
   startDate: string;
   endDate: string;
   limit: number;
+  timeRange?: 'month' | 'week';
 }
 
 export async function fetchTopApps(params: FetchTopAppsParams): Promise<ParsedApp[]> {
@@ -74,7 +75,7 @@ export async function fetchTopApps(params: FetchTopAppsParams): Promise<ParsedAp
     const queryParams: Record<string, string> = {
       auth_token: authToken,
       comparison_attribute: 'absolute',
-      time_range: 'month',
+      time_range: params.timeRange || 'month',
       measure: 'revenue',
       date: startDate,
       category: category,
