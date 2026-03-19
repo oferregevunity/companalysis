@@ -3,7 +3,9 @@ import { computeRisingStarScore } from './scoringEngine';
 import type { AppScoreInput, ScoredApp } from './scoringEngine';
 import { generateGenreInsights } from './geminiClient';
 
-const db = getFirestore('companalysis');
+function getDb() {
+  return getFirestore('companalysis');
+}
 
 interface GenreConfig {
   id: string;
@@ -15,7 +17,7 @@ async function loadGenreAppData(
   granularity: 'month' | 'week'
 ): Promise<{ apps: AppScoreInput[]; periods: string[] }> {
   const timeField = granularity === 'week' ? 'week' : 'month';
-  let query = db.collection('snapshots')
+  let query = getDb().collection('snapshots')
     .where('genreId', '==', genreId)
     .orderBy(timeField, 'asc');
 
@@ -121,7 +123,7 @@ export async function runInsightsPipeline(
   const latestPeriod = periods[periods.length - 1];
   const docId = `${genre.id}_${latestPeriod}`;
 
-  await db.collection('insights').doc(docId).set({
+  await getDb().collection('insights').doc(docId).set({
     genreId: genre.id,
     period: latestPeriod,
     granularity,
@@ -134,9 +136,9 @@ export async function runInsightsPipeline(
   // Store individual scores for all apps (for Dashboard AI Score column)
   // Firestore batch limit is 500 operations; split if needed
   const BATCH_SIZE = 400;
-  const scoresRef = db.collection('insights').doc(docId).collection('scores');
+  const scoresRef = getDb().collection('insights').doc(docId).collection('scores');
   for (let i = 0; i < allScored.length; i += BATCH_SIZE) {
-    const batch = db.batch();
+    const batch = getDb().batch();
     const chunk = allScored.slice(i, i + BATCH_SIZE);
     for (const scored of chunk) {
       batch.set(scoresRef.doc(scored.appId), {
@@ -155,7 +157,7 @@ export async function runInsightsPipeline(
 export async function runAllGenreInsights(
   granularity: 'month' | 'week' = 'month'
 ): Promise<{ genresProcessed: string[]; errors: string[] }> {
-  const genresSnap = await db.collection('genres').where('active', '==', true).get();
+  const genresSnap = await getDb().collection('genres').where('active', '==', true).get();
   const genres = genresSnap.docs.map(doc => ({
     id: doc.id,
     name: doc.data().name as string,
