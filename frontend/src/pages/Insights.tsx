@@ -234,6 +234,37 @@ function GenreInsightCard({ insight, genreName, granularity }: { insight: GenreI
       {insight.watchList.length > 0 && (
         <WatchList items={insight.watchList} />
       )}
+      {insight.correlations && (
+        <div className="mt-6 bg-purple-50 border border-purple-100 rounded-lg p-4">
+          <h3 className="text-sm font-semibold text-purple-900 mb-2 flex items-center gap-1.5">
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M7.5 21L3 16.5m0 0L7.5 12M3 16.5h13.5m0-13.5L21 7.5m0 0L16.5 12M21 7.5H7.5" />
+            </svg>
+            Game Correlations & Trends
+          </h3>
+          {insight.correlations.themes.length > 0 && (
+            <div className="mb-2">
+              <span className="text-xs font-medium text-purple-700">Themes: </span>
+              <div className="inline-flex flex-wrap gap-1 ml-1">
+                {insight.correlations.themes.map((t, i) => (
+                  <span key={i} className="inline-flex px-2 py-0.5 rounded-full text-xs bg-purple-100 text-purple-800">{t}</span>
+                ))}
+              </div>
+            </div>
+          )}
+          {insight.correlations.mechanics.length > 0 && (
+            <div className="mb-2">
+              <span className="text-xs font-medium text-purple-700">Mechanics: </span>
+              <div className="inline-flex flex-wrap gap-1 ml-1">
+                {insight.correlations.mechanics.map((m, i) => (
+                  <span key={i} className="inline-flex px-2 py-0.5 rounded-full text-xs bg-indigo-100 text-indigo-800">{m}</span>
+                ))}
+              </div>
+            </div>
+          )}
+          <p className="text-sm text-purple-900 mt-2">{insight.correlations.analysis}</p>
+        </div>
+      )}
     </div>
   );
 }

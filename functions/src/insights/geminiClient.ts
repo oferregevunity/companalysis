@@ -27,13 +27,19 @@ export interface GenreInsight {
     score: number;
     reason: string;
   }>;
+  correlations?: {
+    themes: string[];
+    mechanics: string[];
+    analysis: string;
+  };
 }
 
 export async function generateGenreInsights(
   genreName: string,
   topApps: ScoredApp[],
   watchCandidates: ScoredApp[],
-  periodData: Record<string, Record<string, { revenue: number; downloads: number }>>
+  periodData: Record<string, Record<string, { revenue: number; downloads: number }>>,
+  appDescriptions?: Map<string, { description: string; genre?: string }>
 ): Promise<GenreInsight> {
   const model = getModel();
 
@@ -44,16 +50,33 @@ export async function generateGenreInsights(
       .map(([p, d]) => `  ${p}: revenue=$${d.revenue.toLocaleString()}, downloads=${d.downloads.toLocaleString()}`)
       .join('\n');
 
+    const desc = appDescriptions?.get(app.appId);
+    const descLine = desc ? `\n  Genre: ${desc.genre || 'N/A'}\n  Description: ${desc.description}` : '';
+
     return `#${i + 1} ${app.appName} (by ${app.publisherName})
   Rising Star Score: ${app.score}/100
-  Sub-scores: Revenue Accel=${app.subScores.revenueAcceleration}/25, Download Momentum=${app.subScores.downloadMomentum}/25, Anomaly=${app.subScores.anomalyScore}/25, Convergence=${app.subScores.crossMetricConvergence}/25
+  Sub-scores: Revenue Accel=${app.subScores.revenueAcceleration}/25, Download Momentum=${app.subScores.downloadMomentum}/25, Anomaly=${app.subScores.anomalyScore}/25, Convergence=${app.subScores.crossMetricConvergence}/25${descLine}
   Period data:
 ${periodLines}`;
   }).join('\n\n');
 
-  const watchSummaries = watchCandidates.map(app =>
-    `- ${app.appName} (score: ${app.score})`
-  ).join('\n');
+  const watchSummaries = watchCandidates.map(app => {
+    const desc = appDescriptions?.get(app.appId);
+    const descPart = desc ? ` — ${desc.genre || ''} ${desc.description.slice(0, 100)}...` : '';
+    return `- ${app.appName} (score: ${app.score})${descPart}`;
+  }).join('\n');
+
+  const hasDescriptions = appDescriptions && appDescriptions.size > 0;
+  const correlationInstruction = hasDescriptions
+    ? `\n\nIMPORTANT: Also analyze correlations between the rising games. Look at their descriptions, gameplay mechanics, themes, and art styles. Identify:
+- Common gameplay themes (e.g., "merge mechanics", "idle progression", "match-3 puzzle")
+- Shared game mechanics or monetization patterns
+- What these correlations suggest about current player demand in this genre
+
+Add a "correlations" section to your JSON response.`
+    : `\n\nAlso analyze correlations between the rising games based on their names, publishers, and growth patterns. Identify any common themes or patterns you can infer.
+
+Add a "correlations" section to your JSON response.`;
 
   const prompt = `You are a mobile gaming market analyst. Analyze the following top rising star games in the "${genreName}" genre.
 
@@ -62,6 +85,7 @@ ${appSummaries}
 
 WATCH LIST CANDIDATES (just outside top 5):
 ${watchSummaries}
+${correlationInstruction}
 
 Respond in valid JSON with this exact structure (no markdown, no code fences):
 {
@@ -78,7 +102,12 @@ Respond in valid JSON with this exact structure (no markdown, no code fences):
       "appId": "the-app-id",
       "reason": "1 sentence why this game is worth watching"
     }
-  ]
+  ],
+  "correlations": {
+    "themes": ["theme1", "theme2"],
+    "mechanics": ["mechanic1", "mechanic2"],
+    "analysis": "2-4 sentence analysis of what patterns suggest about player demand and genre trends"
+  }
 }
 
 For each game explanation, reference specific data points (% changes, revenue figures, download trends). Be concise and analytical. Focus on what the numbers suggest about the game's trajectory.`;
@@ -117,5 +146,10 @@ For each game explanation, reference specific data points (% changes, revenue fi
         reason: geminiWatch?.reason || 'Score approaching top 5 threshold.',
       };
     }),
+    correlations: parsed.correlations ? {
+      themes: parsed.correlations.themes || [],
+      mechanics: parsed.correlations.mechanics || [],
+      analysis: parsed.correlations.analysis || '',
+    } : undefined,
   };
 }

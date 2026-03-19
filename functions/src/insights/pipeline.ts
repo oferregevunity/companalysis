@@ -2,6 +2,7 @@ import { getFirestore, Timestamp } from 'firebase-admin/firestore';
 import { computeRisingStarScore } from './scoringEngine';
 import type { AppScoreInput, ScoredApp } from './scoringEngine';
 import { generateGenreInsights } from './geminiClient';
+import { fetchAppDescriptions } from './appDescriptions';
 
 function getDb() {
   return getFirestore('companalysis');
@@ -134,9 +135,22 @@ export async function runInsightsPipeline(
     }
   }
 
+  // Fetch app descriptions for correlation analysis
+  const relevantIds = new Map<string, { iosAppId: string | null; androidAppId: string | null }>();
+  for (const app of [...topApps, ...watchCandidates]) {
+    const ids = storeIds.get(app.appId);
+    if (ids) relevantIds.set(app.appId, ids);
+  }
+  let appDescriptions: Map<string, { description: string; genre?: string }> | undefined;
+  try {
+    appDescriptions = await fetchAppDescriptions(relevantIds);
+  } catch (err) {
+    console.error('Failed to fetch app descriptions:', err);
+  }
+
   let insight;
   try {
-    insight = await generateGenreInsights(genre.name, topApps, watchCandidates, periodData);
+    insight = await generateGenreInsights(genre.name, topApps, watchCandidates, periodData, appDescriptions);
   } catch (err) {
     console.error(`Gemini insight generation failed for ${genre.name}:`, err);
     insight = {
@@ -184,6 +198,7 @@ export async function runInsightsPipeline(
     summary: insight.summary,
     games: enrichedGames,
     watchList: enrichedWatchList,
+    ...(insight.correlations ? { correlations: insight.correlations } : {}),
   });
 
   // Store individual scores for all apps (for Dashboard AI Score column)

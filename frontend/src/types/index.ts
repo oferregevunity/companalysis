@@ -93,6 +93,12 @@ export interface InsightWatchItem {
   periodData?: Record<string, { revenue: number; downloads: number }>;
 }
 
+export interface InsightCorrelations {
+  themes: string[];
+  mechanics: string[];
+  analysis: string;
+}
+
 export interface GenreInsightDoc {
   genreId: string;
   period: string;
@@ -101,4 +107,5 @@ export interface GenreInsightDoc {
   summary: string;
   games: InsightGame[];
   watchList: InsightWatchItem[];
+  correlations?: InsightCorrelations;
 }
