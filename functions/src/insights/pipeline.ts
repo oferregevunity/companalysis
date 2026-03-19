@@ -59,6 +59,28 @@ async function loadGenreAppData(
     }
   }
 
+  // Resolve unknown names from the appNames cache collection
+  const unknownIds = Array.from(appDataMap.entries())
+    .filter(([, data]) => data.appName === 'Unknown')
+    .map(([id]) => id);
+
+  if (unknownIds.length > 0) {
+    // Batch lookups in chunks of 30 (Firestore 'in' query limit)
+    for (let i = 0; i < unknownIds.length; i += 30) {
+      const chunk = unknownIds.slice(i, i + 30);
+      const namesDocs = await getDb().collection('appNames')
+        .where('__name__', 'in', chunk).get();
+      for (const doc of namesDocs.docs) {
+        const entry = appDataMap.get(doc.id);
+        if (entry) {
+          const nameData = doc.data();
+          if (nameData.name) entry.appName = nameData.name;
+          if (nameData.publisherName) entry.publisherName = nameData.publisherName;
+        }
+      }
+    }
+  }
+
   const apps: AppScoreInput[] = Array.from(appDataMap.entries()).map(
     ([appId, data]) => ({
       appId,
