@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useGenres } from '../hooks/useGenres';
 import { useCreativeInsights } from '../hooks/useCreativeInsights';
 import { useCreativesForGenre } from '../hooks/useCreativesForGenre';
+import { useGenreDataStatus } from '../hooks/useGenreDataStatus';
 import { getCreativeWeekBounds, getLatestCreativeWeek } from '../lib/creativesWeek';
 import { triggerCreativesForGenre } from '../lib/creativesApi';
 import { AIHighlightsStrip } from '../components/creatives/AIHighlightsStrip';
@@ -40,6 +41,11 @@ function formatTimeAgo(d: Date): string {
   if (hours < 24) return `${hours}h ago`;
   const days = Math.floor(hours / 24);
   return `${days}d ago`;
+}
+
+function formatRelativeOrDash(d: Date | null | undefined): string {
+  if (d == null) return '—';
+  return formatTimeAgo(d);
 }
 
 function parseSeenMs(s: string): number | null {
@@ -116,6 +122,8 @@ export default function Creatives() {
   const { genres, loading: genresLoading } = useGenres();
   const [selectedGenreId, setSelectedGenreId] = useState<string>('');
   const [generating, setGenerating] = useState(false);
+  const [reanalyzeError, setReanalyzeError] = useState<string | null>(null);
+  const [reanalyzeSuccess, setReanalyzeSuccess] = useState<string | null>(null);
   const [filters, setFilters] = useState<Filters>(() => defaultFilters());
   const [detailDocId, setDetailDocId] = useState<string | null>(null);
 
@@ -137,6 +145,8 @@ export default function Creatives() {
 
   const selectGenre = useCallback((id: string) => {
     setSelectedGenreId(id);
+    setReanalyzeError(null);
+    setReanalyzeSuccess(null);
     try {
       localStorage.setItem(STORAGE_KEY, id);
     } catch {
@@ -146,6 +156,8 @@ export default function Creatives() {
 
   const { data: insightDoc, loading: insightLoading } = useCreativeInsights(selectedGenreId, latestWeek);
   const { creatives: joinedCreatives, loading: creativesLoading } = useCreativesForGenre(selectedGenreId, latestWeek);
+  const { statusMap: genreStatusMap } = useGenreDataStatus(selectedGenreId ? [selectedGenreId] : []);
+  const creativesRunStatus = selectedGenreId ? genreStatusMap[selectedGenreId]?.creatives : undefined;
 
   const rankMap = useMemo(() => {
     const m = new Map<string, number>();
@@ -212,12 +224,22 @@ export default function Creatives() {
 
   const handleReanalyze = useCallback(async () => {
     if (!selectedGenreId) return;
+    setReanalyzeError(null);
+    setReanalyzeSuccess(null);
     setGenerating(true);
     try {
       const { startDate, endDate } = getCreativeWeekBounds(latestWeek);
-      await triggerCreativesForGenre(selectedGenreId, startDate, endDate);
+      const result = await triggerCreativesForGenre(selectedGenreId, startDate, endDate);
+      if (!result.success) {
+        const detail =
+          result.partialErrors?.length > 0 ? result.partialErrors.join(' · ') : 'Pipeline finished with issues.';
+        setReanalyzeError(detail);
+      } else {
+        setReanalyzeSuccess('Analysis completed. The view will refresh as Firestore updates.');
+      }
     } catch (err) {
       console.error('triggerCreativesForGenre', err);
+      setReanalyzeError(err instanceof Error ? err.message : 'Request failed.');
     } finally {
       setGenerating(false);
     }
@@ -226,25 +248,46 @@ export default function Creatives() {
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <h1 className="text-2xl font-bold text-gray-900">Creatives</h1>
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="text-sm text-gray-500">
-            {insightLoading && !insightDoc ? (
-              <span>Loading status…</span>
-            ) : lastAnalyzed ? (
-              <span>Last analyzed {lastAnalyzed}</span>
-            ) : (
-              <span>Never analyzed.</span>
-            )}
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">Creatives</h1>
+          <p className="mt-1 text-xs text-gray-500">
+            <span className="font-medium text-gray-600">Creatives:</span>{' '}
+            fetched {formatRelativeOrDash(creativesRunStatus?.lastFetchedAt ?? null)} · analyzed{' '}
+            {formatRelativeOrDash(creativesRunStatus?.lastAnalyzedAt ?? null)} · errored{' '}
+            {formatRelativeOrDash(creativesRunStatus?.lastErroredAt ?? null)}
+          </p>
+        </div>
+        <div className="flex flex-col items-end gap-2">
+          <div className="flex flex-wrap items-center justify-end gap-3">
+            <div className="text-sm text-gray-500 text-right">
+              {insightLoading && !insightDoc ? (
+                <span>Loading status…</span>
+              ) : lastAnalyzed ? (
+                <span>Last analyzed {lastAnalyzed}</span>
+              ) : (
+                <span>Never analyzed.</span>
+              )}
+            </div>
+            <button
+              type="button"
+              onClick={handleReanalyze}
+              disabled={generating || !selectedGenreId}
+              className="px-4 py-2 bg-green-600 text-white text-sm font-medium rounded-lg hover:bg-green-700 disabled:opacity-50"
+            >
+              {generating ? 'Re-analyzing…' : 'Re-analyze this week'}
+            </button>
           </div>
-          <button
-            type="button"
-            onClick={handleReanalyze}
-            disabled={generating || !selectedGenreId}
-            className="px-4 py-2 bg-green-600 text-white text-sm font-medium rounded-lg hover:bg-green-700 disabled:opacity-50"
-          >
-            {generating ? 'Analyzing…' : 'Re-analyze'}
-          </button>
+          {generating && (
+            <p className="text-xs text-gray-500 text-right max-w-sm">
+              Re-analyzing… this takes ~1–2 minutes.
+            </p>
+          )}
+          {reanalyzeError && !generating && (
+            <p className="text-xs text-red-600 text-right max-w-sm">{reanalyzeError}</p>
+          )}
+          {reanalyzeSuccess && !generating && !reanalyzeError && (
+            <p className="text-xs text-green-700 text-right max-w-sm">{reanalyzeSuccess}</p>
+          )}
         </div>
       </div>
 

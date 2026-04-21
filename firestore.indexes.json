@@ -57,6 +57,22 @@
         { "fieldPath": "genreId", "order": "ASCENDING" },
         { "fieldPath": "score", "order": "DESCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "creativeSnapshots",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "genreId", "order": "ASCENDING" },
+        { "fieldPath": "fetchedAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "creativeInsights",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "genreId", "order": "ASCENDING" },
+        { "fieldPath": "generatedAt", "order": "DESCENDING" }
+      ]
     }
   ],
   "fieldOverrides": []
