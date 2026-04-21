@@ -402,6 +402,57 @@ export const compAnalysisApi = onRequest(
           });
         }
 
+        case 'creatives/trigger': {
+          const { genreId, weekStart, weekEnd } = req.body || {};
+          if (!genreId || !weekStart || !weekEnd) {
+            return sendError(res, 400, 'genreId, weekStart, and weekEnd are required');
+          }
+          const creativesAuthToken = sensorTowerAuthToken.value().trim();
+          const gDoc = await db.collection('genres').doc(genreId).get();
+          if (!gDoc.exists) {
+            return sendError(res, 404, 'Genre not found');
+          }
+          const genre = { id: gDoc.id, ...gDoc.data() } as any;
+          const { runCreativePipelineForGenre } = await import('./creativeInsights/runForGenre');
+          const result = await runCreativePipelineForGenre(genre, weekStart, weekEnd, creativesAuthToken);
+          return sendSuccess(res, result);
+        }
+
+        case 'creatives/watchlist': {
+          const ref = db.collection('watchlist').doc('team');
+          const snap = await ref.get();
+          const appIds: string[] = (snap.exists && Array.isArray((snap.data() as any)?.appIds))
+            ? (snap.data() as any).appIds
+            : [];
+          return sendSuccess(res, { appIds });
+        }
+
+        case 'creatives/watchlist/add': {
+          const { appId } = req.body || {};
+          if (!appId || typeof appId !== 'string') {
+            return sendError(res, 400, 'appId (string) is required');
+          }
+          const ref = db.collection('watchlist').doc('team');
+          await ref.set(
+            { appIds: admin.firestore.FieldValue.arrayUnion(appId), updatedAt: admin.firestore.FieldValue.serverTimestamp() },
+            { merge: true },
+          );
+          return sendSuccess(res, { success: true });
+        }
+
+        case 'creatives/watchlist/remove': {
+          const { appId } = req.body || {};
+          if (!appId || typeof appId !== 'string') {
+            return sendError(res, 400, 'appId (string) is required');
+          }
+          const ref = db.collection('watchlist').doc('team');
+          await ref.set(
+            { appIds: admin.firestore.FieldValue.arrayRemove(appId), updatedAt: admin.firestore.FieldValue.serverTimestamp() },
+            { merge: true },
+          );
+          return sendSuccess(res, { success: true });
+        }
+
         default:
           sendError(res, 404, `Unknown route: ${path}`);
       }
