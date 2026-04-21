@@ -13,6 +13,14 @@
       "queryScope": "COLLECTION",
       "fields": [
         { "fieldPath": "genreId", "order": "ASCENDING" },
+        { "fieldPath": "month", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "snapshots",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "genreId", "order": "ASCENDING" },
         { "fieldPath": "granularity", "order": "ASCENDING" },
         { "fieldPath": "week", "order": "ASCENDING" }
       ]
