@@ -20,7 +20,7 @@ function sleep(ms: number): Promise<void> {
   return new Promise(r => setTimeout(r, ms));
 }
 
-async function fetchWithRetry(url: string, retries = MAX_RETRIES): Promise<any> {
+async function fetchWithRetry(url: string, retries = MAX_RETRIES): Promise<unknown> {
   for (let attempt = 0; attempt <= retries; attempt++) {
     try {
       const res = await fetch(url);
@@ -40,6 +40,7 @@ async function fetchWithRetry(url: string, retries = MAX_RETRIES): Promise<any> 
       await sleep(Math.pow(2, attempt) * 1000);
     }
   }
+  throw new Error(`Ad Intel: rate limited (429) after ${retries + 1} attempts`);
 }
 
 function daysBetween(a: string, b: string): number {
@@ -163,7 +164,7 @@ export async function fetchCreativesForApp(params: FetchCreativesParams): Promis
 
   const url = `${BASE_URL}/unified/ad_intel/creatives?${qs.toString()}`;
   await sleep(REQUEST_DELAY_MS);
-  const data = await fetchWithRetry(url);
+  const data = (await fetchWithRetry(url)) as Record<string, unknown> | null;
   const adUnits: any[] = Array.isArray(data?.ad_units) ? data.ad_units : [];
   return adUnits.map(u => parseRawCreative(u, country));
 }
@@ -200,7 +201,7 @@ export async function fetchNetworkShareOfVoice(
 
   const url = `${BASE_URL}/unified/ad_intel/network_analysis?${qs.toString()}`;
   await sleep(REQUEST_DELAY_MS);
-  const data = await fetchWithRetry(url);
+  const data = (await fetchWithRetry(url)) as Record<string, unknown> | unknown[] | null;
   const rows: any[] = Array.isArray(data) ? data : Array.isArray(data?.data) ? data.data : [];
   return rows.map(r => parseNetworkShareOfVoice(r, period));
 }
