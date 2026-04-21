@@ -6,7 +6,15 @@ import { getCreativeWeekBounds, getLatestCreativeWeek } from '../lib/creativesWe
 import { triggerCreativesForGenre } from '../lib/creativesApi';
 import { AIHighlightsStrip } from '../components/creatives/AIHighlightsStrip';
 import { CreativeGallery } from '../components/creatives/CreativeGallery';
-import { useAppNames } from '../hooks/useAppNames';
+import {
+  buildAppOptions,
+  CreativeFilters,
+  defaultFilters,
+  type Filters,
+} from '../components/creatives/CreativeFilters';
+import { useAppNames, type AppNameMapEntry } from '../hooks/useAppNames';
+import type { CreativeFormat, QueryableAdNetwork } from '../types/creatives';
+import type { JoinedCreative } from '../hooks/useCreativesForGenre';
 
 const STORAGE_KEY = 'creatives.selectedGenreId';
 
@@ -33,10 +41,81 @@ function formatTimeAgo(d: Date): string {
   return `${days}d ago`;
 }
 
+function parseSeenMs(s: string): number | null {
+  const t = Date.parse(s);
+  return Number.isNaN(t) ? null : t;
+}
+
+function applyCreativeFilters(
+  list: JoinedCreative[],
+  filters: Filters,
+  appNames: Map<string, AppNameMapEntry>,
+): JoinedCreative[] {
+  const q = filters.search.trim().toLowerCase();
+  let out = list;
+
+  if (q) {
+    out = out.filter((c) => {
+      const app = appNames.get(c.appId);
+      const name = (app?.name ?? '').toLowerCase();
+      const pub = (app?.publisherName ?? '').toLowerCase();
+      const title = (c.title ?? '').toLowerCase();
+      return name.includes(q) || pub.includes(q) || title.includes(q);
+    });
+  }
+
+  if (filters.networks.size > 0) {
+    out = out.filter((c) => c.networks.some((n) => filters.networks.has(n)));
+  }
+
+  if (filters.formats.size > 0) {
+    out = out.filter((c) => filters.formats.has(c.format));
+  }
+
+  if (filters.appIds.size > 0) {
+    out = out.filter((c) => filters.appIds.has(c.appId));
+  }
+
+  if (filters.newThisWeek) {
+    out = out.filter((c) => {
+      const t = parseSeenMs(c.firstSeen);
+      if (t === null) return false;
+      return t >= Date.now() - 7 * 86400000;
+    });
+  }
+
+  if (filters.winnersOnly) {
+    out = out.filter((c) => c.score != null && c.score >= 60);
+  }
+
+  const scoreVal = (c: JoinedCreative) => c.score ?? Number.NEGATIVE_INFINITY;
+  const sovVal = (c: JoinedCreative) => c.maxShare ?? Number.NEGATIVE_INFINITY;
+  const firstSeenVal = (c: JoinedCreative) => parseSeenMs(c.firstSeen) ?? Number.NEGATIVE_INFINITY;
+
+  const sorted = [...out];
+  sorted.sort((a, b) => {
+    switch (filters.sort) {
+      case 'score':
+        return scoreVal(b) - scoreVal(a);
+      case 'duration':
+        return b.durationDays - a.durationDays;
+      case 'firstSeen':
+        return firstSeenVal(b) - firstSeenVal(a);
+      case 'sov':
+        return sovVal(b) - sovVal(a);
+      default:
+        return 0;
+    }
+  });
+
+  return sorted;
+}
+
 export default function Creatives() {
   const { genres, loading: genresLoading } = useGenres();
   const [selectedGenreId, setSelectedGenreId] = useState<string>('');
   const [generating, setGenerating] = useState(false);
+  const [filters, setFilters] = useState<Filters>(() => defaultFilters());
 
   const latestWeek = useMemo(() => getLatestCreativeWeek(), []);
 
@@ -79,6 +158,34 @@ export default function Creatives() {
 
   const appIds = useMemo(() => joinedCreatives.map((c) => c.appId), [joinedCreatives]);
   const appNames = useAppNames(appIds);
+
+  const availableNetworks = useMemo(() => {
+    const s = new Set<QueryableAdNetwork>();
+    for (const c of joinedCreatives) {
+      for (const n of c.networks) {
+        s.add(n);
+      }
+    }
+    return [...s].sort((a, b) => a.localeCompare(b));
+  }, [joinedCreatives]);
+
+  const availableFormats = useMemo(() => {
+    const s = new Set<CreativeFormat>();
+    for (const c of joinedCreatives) {
+      s.add(c.format);
+    }
+    return [...s].sort((a, b) => a.localeCompare(b));
+  }, [joinedCreatives]);
+
+  const appOptions = useMemo(
+    () => buildAppOptions([...new Set(joinedCreatives.map((c) => c.appId))], appNames),
+    [joinedCreatives, appNames],
+  );
+
+  const filteredCreatives = useMemo(
+    () => applyCreativeFilters(joinedCreatives, filters, appNames),
+    [joinedCreatives, filters, appNames],
+  );
 
   const lastAnalyzed = useMemo(() => {
     const d = generatedAtToDate(insightDoc?.generatedAt);
@@ -161,12 +268,25 @@ export default function Creatives() {
       ) : joinedCreatives.length === 0 ? (
         <div className="text-center py-12 text-gray-400">No creatives for this genre yet.</div>
       ) : (
-        <CreativeGallery
-          creatives={joinedCreatives}
-          rankMap={rankMap}
-          appNames={appNames}
-          onOpen={() => {}}
-        />
+        <>
+          <CreativeFilters
+            filters={filters}
+            setFilters={setFilters}
+            availableNetworks={availableNetworks}
+            availableFormats={availableFormats}
+            appOptions={appOptions}
+          />
+          {filteredCreatives.length === 0 ? (
+            <div className="text-center py-12 text-gray-400">No creatives match your filters.</div>
+          ) : (
+            <CreativeGallery
+              creatives={filteredCreatives}
+              rankMap={rankMap}
+              appNames={appNames}
+              onOpen={() => {}}
+            />
+          )}
+        </>
       )}
     </div>
   );
