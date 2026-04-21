@@ -139,56 +139,141 @@ git commit -m "chore(ad-intel): capture sample response fixtures for client typi
 
 ### Task 1.1: Ad Intel TypeScript types
 
+> **Revised after Task 0.2 fixture capture.** The original plan used invented field names (`creativeId`, `creative_url`, `share_of_voice`, flat array). The real API returns a nested `ad_units[] → creatives[]` shape with capitalized network slugs, a `phashion_group` dedup key, and `share` / `sov` numeric fields. Types below match the committed fixtures in `functions/src/adIntel/fixtures/`.
+
 **Files:**
 - Create: `functions/src/adIntel/types.ts`
 
-**Step 1: Write the types (derived from fixtures)**
+**Step 1: Write the types (derived from real Sensor Tower fixtures)**
 
 ```ts
+/**
+ * Ad Intel domain types. Mapped from the Sensor Tower responses captured in
+ * `functions/src/adIntel/fixtures/`. Sensor Tower's `ad_units[]` rows are our
+ * logical "creative" (one per perceptual-hash group per network); nested
+ * `creatives[]` are size/locale variants of the same concept and are collapsed
+ * into a single representative preview on our side.
+ */
+
+/** Creative media type, derived from Sensor Tower's `ad_type` string. */
 export type CreativeFormat = 'video' | 'image' | 'playable' | 'unknown';
 
-export type AdNetwork =
-  | 'facebook'
-  | 'tiktok'
-  | 'applovin'
-  | 'unity'
-  | 'youtube'
-  | 'google_ads'
-  | 'ironsource';
+/**
+ * Networks the Sensor Tower creative-listing endpoint will accept in the
+ * `networks` query parameter. Capitalized per the real API (lowercase
+ * variants return 422). Meta's Facebook inventory is exposed as "Instagram"
+ * or "Facebook" depending on placement; there is no "facebook" slug.
+ */
+export type QueryableAdNetwork =
+  | 'Instagram'
+  | 'Facebook'
+  | 'Meta Audience Network'
+  | 'TikTok'
+  | 'Youtube'
+  | 'Admob'
+  | 'Applovin'
+  | 'Unity'
+  | 'Vungle'
+  | 'Mintegral'
+  | 'IronSource'
+  | 'Chartboost';
 
-export const TRACKED_NETWORKS: readonly AdNetwork[] = [
-  'facebook',
-  'tiktok',
-  'applovin',
-  'unity',
-  'youtube',
-  'google_ads',
-  'ironsource',
+/**
+ * Networks we track for competitive intelligence. Subset of all observable
+ * networks in Sensor Tower's SoV response (which also returns BidMachine,
+ * Moloco, Digital Turbine, Smaato, Verve, Supersonic, InMobi, etc. — these
+ * are aggregators/exchanges and not interesting for creative scraping).
+ */
+export const TRACKED_NETWORKS: readonly QueryableAdNetwork[] = [
+  'Instagram',
+  'Facebook',
+  'Meta Audience Network',
+  'TikTok',
+  'Youtube',
+  'Admob',
+  'Applovin',
+  'Unity',
+  'IronSource',
 ] as const;
 
-export interface RawCreative {
-  creativeId: string;
-  appId: string;            // Unified app id from Sensor Tower
-  network: AdNetwork;
-  format: CreativeFormat;
-  firstSeen: string;        // ISO date
-  lastSeen: string;         // ISO date
-  durationDays: number;     // derived if not present
-  previewUrl: string | null;
-  videoUrl: string | null;
-  thumbnailUrl: string | null;
-  aspectRatio: string | null; // e.g. "9:16"
-  countries: string[];
-  shareOfVoice: number | null;  // 0-1, nullable if plan lacks it
-  impressions: number | null;
+/** Any Sensor Tower network slug (including ones we don't scrape creatives for). */
+export type AdNetwork = QueryableAdNetwork | string;
+
+/** One date-bucketed data point from `ad_units[].breakdown.date`. */
+export interface BreakdownBucket {
+  /** Inclusive ISO start, e.g. `"2024-04-01T00:00:00Z"`. */
+  start: string;
+  /** Inclusive ISO end, e.g. `"2024-06-30T00:00:00Z"`. */
+  end: string;
+  /** Share in [0, 1] — fraction of this ad_unit's activity in the bucket. */
+  share: number;
 }
 
+/**
+ * One logical creative = one `ad_unit` from Sensor Tower. Nested size/locale
+ * variants in `ad_units[].creatives[]` are collapsed into a single
+ * representative preview plus a `variantCount`.
+ */
+export interface RawCreative {
+  /** Stable per-ad_unit id (Sensor Tower's `ad_units[].id`). */
+  id: string;
+  /**
+   * Perceptual-hash group id — the same concept across networks shares this
+   * value (Sensor Tower's `ad_units[].phashion_group`). Use this as the
+   * cross-network dedup key.
+   */
+  phashionGroup: string | null;
+  /** Unified Sensor Tower app id (e.g. `"5f16a8019f7b275235017614"`). */
+  appId: string;
+  network: QueryableAdNetwork;
+  /** Country the scrape was scoped to (the API does not echo this back). */
+  country: string;
+  format: CreativeFormat;
+  /** Raw `ad_type` string from the API, preserved for debugging. */
+  rawAdType: string;
+  /** ISO date (`YYYY-MM-DD`) from `first_seen_at`. */
+  firstSeen: string;
+  /** ISO date (`YYYY-MM-DD`) from `last_seen_at`. */
+  lastSeen: string;
+  /** Days between firstSeen and lastSeen, clamped ≥ 0. */
+  durationDays: number;
+  /**
+   * Fraction (0–1) of THIS app's ads on THIS network/country that belong to
+   * this ad_unit, per Sensor Tower's `ad_units[].share`. Not the same as SoV
+   * across apps — use `NetworkShareOfVoice` for that.
+   */
+  share: number | null;
+  /** Representative media URL (first nested `creatives[].creative_url`). */
+  mediaUrl: string | null;
+  previewUrl: string | null;
+  thumbnailUrl: string | null;
+  /** Seconds, from the representative variant's `video_duration`. */
+  videoDurationSec: number | null;
+  width: number | null;
+  height: number | null;
+  /** Ad copy from the representative variant. */
+  title: string | null;
+  message: string | null;
+  buttonText: string | null;
+  /** Number of nested `creatives[]` variants (locales/aspect ratios). */
+  variantCount: number;
+  /** `ad_units[].ad_formats` echoed through, e.g. `["other"]` or `["reward"]`. */
+  adFormats: string[];
+  /** Optional time-series breakdown; may be empty when the API returns none. */
+  breakdown: BreakdownBucket[];
+}
+
+/** One row from `/v1/unified/ad_intel/network_analysis`. */
 export interface NetworkShareOfVoice {
   appId: string;
+  /** Any Sensor Tower network slug (SoV covers a broader set than we scrape). */
   network: AdNetwork;
   country: string;
-  weekStart: string;        // ISO date (Monday)
-  shareOfVoice: number;     // 0-1
+  /** ISO date at the start of the period (day/week/month-aligned). */
+  date: string;
+  period: 'day' | 'week' | 'month';
+  /** 0–1. */
+  sov: number;
 }
 ```
 
@@ -203,36 +288,98 @@ git commit -m "feat(ad-intel): add ad intel domain types"
 
 ### Task 1.2: Ad Intel client — `fetchCreativesForApp`
 
+> **Revised after Task 0.2 fixture capture.** Endpoint changes vs the original plan:
+> - Real creatives endpoint is `/v1/unified/ad_intel/creatives` (NOT `/unified/creatives_v2`; that path returns 404).
+> - `ad_types` query parameter is **required** — omitting it returns `200` with an empty `ad_units` array.
+> - Response is `{ count, available_networks, ad_units: [...] }` — we flatten `ad_units[]`, each row containing its own nested `creatives[]` variant list.
+> - Use unified Sensor Tower app ids (the Mongo-style IDs stored in `snapshots/.../apps[].unifiedAppId`), not raw iOS/Android store IDs.
+> - SoV endpoint requires `period` ∈ `day|week|month` (we use `week`), returns `{ app_id, country, network, date, sov }`.
+
 **Files:**
 - Create: `functions/src/adIntel/client.ts`
 - Create: `functions/src/adIntel/client.test.ts`
 
-**Step 1: Write failing test**
+**Step 1: Write failing tests**
 
 ```ts
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { parseRawCreative } from './client';
-import fixture from './fixtures/creatives_ios.sample.json';
+import { describe, it, expect } from 'vitest';
+import { parseRawCreative, parseNetworkShareOfVoice } from './client';
+import creativesFixture from './fixtures/creatives_unified.sample.json';
+import sovFixture from './fixtures/network_share_of_voice.sample.json';
 
 describe('parseRawCreative', () => {
-  it('normalizes a Sensor Tower creative into our RawCreative shape', () => {
-    const item = (fixture as any).creatives[0];
-    const parsed = parseRawCreative(item, 'facebook');
-    expect(parsed.creativeId).toBeTypeOf('string');
-    expect(parsed.network).toBe('facebook');
-    expect(['video', 'image', 'playable', 'unknown']).toContain(parsed.format);
-    expect(parsed.durationDays).toBeGreaterThanOrEqual(0);
-    expect(parsed.countries).toEqual(expect.any(Array));
+  it('normalizes a Sensor Tower ad_unit into our RawCreative shape', () => {
+    const item = (creativesFixture as any).ad_units[0];
+    const parsed = parseRawCreative(item, 'US');
+
+    expect(parsed.id).toBeTypeOf('string');
+    expect(parsed.network).toBe('Instagram');
+    expect(parsed.country).toBe('US');
+    expect(parsed.format).toBe('video');
+    expect(parsed.firstSeen).toBe('2024-02-27');
+    expect(parsed.lastSeen).toBe('2024-06-04');
+    expect(parsed.durationDays).toBeGreaterThan(0);
+    expect(parsed.share).toBeCloseTo(0.40158, 5);
+    expect(parsed.mediaUrl).toMatch(/^https?:\/\//);
+    expect(parsed.previewUrl).toMatch(/^https?:\/\//);
+    expect(parsed.thumbnailUrl).toMatch(/^https?:\/\//);
+    expect(parsed.phashionGroup).toBeTypeOf('string');
+    expect(parsed.variantCount).toBeGreaterThanOrEqual(1);
+    expect(Array.isArray(parsed.adFormats)).toBe(true);
+    expect(Array.isArray(parsed.breakdown)).toBe(true);
+  });
+
+  it('collapses multiple variants into one RawCreative with variantCount > 1', () => {
+    const multi = (creativesFixture as any).ad_units.find(
+      (u: any) => Array.isArray(u.creatives) && u.creatives.length > 1
+    );
+    expect(multi).toBeDefined();
+    const parsed = parseRawCreative(multi, 'US');
+    expect(parsed.variantCount).toBe(multi.creatives.length);
+    // Uses the first nested variant for representative media/copy
+    expect(parsed.mediaUrl).toBe(multi.creatives[0].creative_url);
   });
 
   it('coerces missing fields to null (never undefined)', () => {
-    const parsed = parseRawCreative({ creative_id: 'abc', app_id: '553834731' }, 'tiktok');
+    const parsed = parseRawCreative(
+      {
+        id: 'abc',
+        app_id: '553834731',
+        network: 'TikTok',
+        phashion_group: null,
+        ad_type: 'image',
+        first_seen_at: '2026-01-01',
+        last_seen_at: '2026-01-05',
+        creatives: [],
+      },
+      'US'
+    );
+    expect(parsed.mediaUrl).toBeNull();
     expect(parsed.previewUrl).toBeNull();
-    expect(parsed.videoUrl).toBeNull();
     expect(parsed.thumbnailUrl).toBeNull();
-    expect(parsed.aspectRatio).toBeNull();
-    expect(parsed.shareOfVoice).toBeNull();
-    expect(parsed.impressions).toBeNull();
+    expect(parsed.videoDurationSec).toBeNull();
+    expect(parsed.width).toBeNull();
+    expect(parsed.height).toBeNull();
+    expect(parsed.title).toBeNull();
+    expect(parsed.message).toBeNull();
+    expect(parsed.buttonText).toBeNull();
+    expect(parsed.share).toBeNull();
+    expect(parsed.phashionGroup).toBeNull();
+    expect(parsed.format).toBe('image');
+    expect(parsed.variantCount).toBe(0);
+  });
+});
+
+describe('parseNetworkShareOfVoice', () => {
+  it('normalizes a SoV row', () => {
+    const row = (sovFixture as any)[0];
+    const parsed = parseNetworkShareOfVoice(row, 'week');
+    expect(parsed.appId).toBe(row.app_id);
+    expect(parsed.network).toBe(row.network);
+    expect(parsed.country).toBe(row.country);
+    expect(parsed.date).toBe(row.date);
+    expect(parsed.period).toBe('week');
+    expect(parsed.sov).toBe(row.sov);
   });
 });
 ```
@@ -248,11 +395,22 @@ Expected: FAIL with "parseRawCreative not exported".
 
 ```ts
 import fetch from 'node-fetch';
-import type { AdNetwork, CreativeFormat, RawCreative, NetworkShareOfVoice } from './types';
+import type {
+  AdNetwork,
+  BreakdownBucket,
+  CreativeFormat,
+  NetworkShareOfVoice,
+  QueryableAdNetwork,
+  RawCreative,
+} from './types';
+import { TRACKED_NETWORKS } from './types';
 
 const BASE_URL = 'https://api.sensortower.com/v1';
 const REQUEST_DELAY_MS = 300;
 const MAX_RETRIES = 3;
+
+/** All ad types the unified creatives endpoint supports. Required param. */
+const AD_TYPES_ALL = ['video', 'image', 'playable', 'html'] as const;
 
 function sleep(ms: number): Promise<void> {
   return new Promise(r => setTimeout(r, ms));
@@ -287,45 +445,108 @@ function daysBetween(a: string, b: string): number {
   return Math.max(0, Math.round((d2 - d1) / 86400000));
 }
 
-export function parseRawCreative(item: any, network: AdNetwork): RawCreative {
-  const firstSeen = item.first_seen_at || item.first_seen || '';
-  const lastSeen = item.last_seen_at || item.last_seen || '';
-  const rawFormat = String(item.format || item.creative_type || '').toLowerCase();
-  let format: CreativeFormat = 'unknown';
-  if (rawFormat.includes('video')) format = 'video';
-  else if (rawFormat.includes('playable')) format = 'playable';
-  else if (rawFormat.includes('image') || rawFormat.includes('banner')) format = 'image';
+function toCreativeFormat(adType: unknown): CreativeFormat {
+  const s = String(adType ?? '').toLowerCase();
+  if (s.includes('video')) return 'video';
+  if (s.includes('playable')) return 'playable';
+  if (s.includes('image') || s.includes('banner') || s.includes('html')) return 'image';
+  return 'unknown';
+}
+
+function parseBreakdown(raw: any): BreakdownBucket[] {
+  const dateArr = raw?.date;
+  if (!Array.isArray(dateArr)) return [];
+  const out: BreakdownBucket[] = [];
+  for (const row of dateArr) {
+    // shape: [[startIso, endIso], share]
+    if (!Array.isArray(row) || row.length !== 2) continue;
+    const range = row[0];
+    const share = row[1];
+    if (!Array.isArray(range) || range.length !== 2) continue;
+    out.push({
+      start: String(range[0] ?? ''),
+      end: String(range[1] ?? ''),
+      share: Number(share) || 0,
+    });
+  }
+  return out;
+}
+
+export function parseRawCreative(adUnit: any, country: string): RawCreative {
+  const firstSeen = String(adUnit.first_seen_at ?? '');
+  const lastSeen = String(adUnit.last_seen_at ?? '');
+  const variants: any[] = Array.isArray(adUnit.creatives) ? adUnit.creatives : [];
+  const primary = variants[0] ?? {};
 
   return {
-    creativeId: String(item.creative_id || item.id || ''),
-    appId: String(item.app_id || ''),
-    network,
-    format,
+    id: String(adUnit.id ?? ''),
+    phashionGroup:
+      typeof adUnit.phashion_group === 'string' && adUnit.phashion_group.length > 0
+        ? adUnit.phashion_group
+        : null,
+    appId: String(adUnit.app_id ?? ''),
+    network: String(adUnit.network ?? '') as QueryableAdNetwork,
+    country,
+    format: toCreativeFormat(adUnit.ad_type),
+    rawAdType: String(adUnit.ad_type ?? ''),
     firstSeen,
     lastSeen,
     durationDays: firstSeen && lastSeen ? daysBetween(firstSeen, lastSeen) : 0,
-    previewUrl: item.preview_url || null,
-    videoUrl: item.video_url || null,
-    thumbnailUrl: item.thumbnail_url || item.image_url || null,
-    aspectRatio: item.aspect_ratio || null,
-    countries: Array.isArray(item.countries) ? item.countries : [],
-    shareOfVoice: typeof item.share_of_voice === 'number' ? item.share_of_voice : null,
-    impressions: typeof item.impressions === 'number' ? item.impressions : null,
+    share: typeof adUnit.share === 'number' ? adUnit.share : null,
+    mediaUrl: primary.creative_url ?? null,
+    previewUrl: primary.preview_url ?? null,
+    thumbnailUrl: primary.thumb_url ?? null,
+    videoDurationSec:
+      typeof primary.video_duration === 'number' ? primary.video_duration : null,
+    width: typeof primary.width === 'number' ? primary.width : null,
+    height: typeof primary.height === 'number' ? primary.height : null,
+    title: primary.title ?? null,
+    message: primary.message ?? null,
+    buttonText: primary.button_text ?? null,
+    variantCount: variants.length,
+    adFormats: Array.isArray(adUnit.ad_formats) ? adUnit.ad_formats.map(String) : [],
+    breakdown: parseBreakdown(adUnit.breakdown),
+  };
+}
+
+export function parseNetworkShareOfVoice(
+  row: any,
+  period: 'day' | 'week' | 'month'
+): NetworkShareOfVoice {
+  return {
+    appId: String(row.app_id ?? ''),
+    network: String(row.network ?? '') as AdNetwork,
+    country: String(row.country ?? ''),
+    date: String(row.date ?? ''),
+    period,
+    sov: Number(row.sov ?? 0),
   };
 }
 
 export interface FetchCreativesParams {
   authToken: string;
+  /** Unified Sensor Tower app id (from our stored `snapshots/.../apps[].unifiedAppId`). */
   appId: string;
-  network: AdNetwork;
+  network: QueryableAdNetwork;
   country: string;
   startDate: string;  // ISO
   endDate: string;    // ISO
-  limit?: number;     // default 200
+  limit?: number;     // default 200; Sensor Tower paginates beyond this
+  adTypes?: readonly string[]; // default: all
 }
 
 export async function fetchCreativesForApp(params: FetchCreativesParams): Promise<RawCreative[]> {
-  const { authToken, appId, network, country, startDate, endDate, limit = 200 } = params;
+  const {
+    authToken,
+    appId,
+    network,
+    country,
+    startDate,
+    endDate,
+    limit = 200,
+    adTypes = AD_TYPES_ALL,
+  } = params;
+
   const qs = new URLSearchParams({
     auth_token: authToken,
     app_ids: appId,
@@ -333,42 +554,56 @@ export async function fetchCreativesForApp(params: FetchCreativesParams): Promis
     countries: country,
     start_date: startDate,
     end_date: endDate,
+    ad_types: adTypes.join(','),
     limit: String(limit),
   });
-  const url = `${BASE_URL}/unified/creatives_v2?${qs.toString()}`;
+
+  const url = `${BASE_URL}/unified/ad_intel/creatives?${qs.toString()}`;
   await sleep(REQUEST_DELAY_MS);
   const data = await fetchWithRetry(url);
-  const items: any[] = Array.isArray(data) ? data : data?.creatives || data?.data || [];
-  return items.map(item => parseRawCreative(item, network));
+  const adUnits: any[] = Array.isArray(data?.ad_units) ? data.ad_units : [];
+  return adUnits.map(u => parseRawCreative(u, country));
 }
 
-export async function fetchNetworkShareOfVoice(params: {
+export interface FetchSoVParams {
   authToken: string;
   appId: string;
   country: string;
   startDate: string;
   endDate: string;
-}): Promise<NetworkShareOfVoice[]> {
-  const { authToken, appId, country, startDate, endDate } = params;
+  period?: 'day' | 'week' | 'month'; // default 'week'
+}
+
+export async function fetchNetworkShareOfVoice(
+  params: FetchSoVParams
+): Promise<NetworkShareOfVoice[]> {
+  const {
+    authToken,
+    appId,
+    country,
+    startDate,
+    endDate,
+    period = 'week',
+  } = params;
+
   const qs = new URLSearchParams({
     auth_token: authToken,
     app_ids: appId,
     countries: country,
     start_date: startDate,
     end_date: endDate,
+    period,
   });
+
   const url = `${BASE_URL}/unified/ad_intel/network_analysis?${qs.toString()}`;
   await sleep(REQUEST_DELAY_MS);
   const data = await fetchWithRetry(url);
-  const items: any[] = Array.isArray(data) ? data : data?.data || [];
-  return items.map(item => ({
-    appId,
-    network: String(item.network || '').toLowerCase() as AdNetwork,
-    country,
-    weekStart: item.week_start || startDate,
-    shareOfVoice: Number(item.share_of_voice ?? 0),
-  }));
+  const rows: any[] = Array.isArray(data) ? data : Array.isArray(data?.data) ? data.data : [];
+  return rows.map(r => parseNetworkShareOfVoice(r, period));
 }
+
+/** Re-export for convenience at the package boundary. */
+export { TRACKED_NETWORKS };
 ```
 
 **Step 4: Run test to verify it passes**
@@ -384,6 +619,11 @@ Expected: PASS.
 git add functions/src/adIntel/client.ts functions/src/adIntel/client.test.ts
 git commit -m "feat(ad-intel): add sensor tower ad intel client"
 ```
+
+**Notes for downstream tasks:**
+- Task 1.5 (fetch orchestrator) should iterate `TRACKED_NETWORKS` and call `fetchCreativesForApp` per (app × network) — Sensor Tower does NOT support multiple networks in a single call (the param is `networks`, not `networks[]`, and comma-separating returns 422 on mixed sets).
+- The cross-network dedup sub-score in Task 2.2 should key off `phashionGroup` (fall back to `id` when null) so the same concept running on Instagram + Facebook counts as **one** creative at 2 networks, not two separate creatives.
+- `breakdown[].start` / `breakdown[].end` are **quarterly** in live responses; a weekly rolling 30-day window will usually see only 1-2 buckets with non-zero share. Scoring should treat an empty `breakdown` as "no extra signal" and rely on `firstSeen` / `lastSeen` / `durationDays`.
 
 ---
 
