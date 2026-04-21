@@ -47,6 +47,6 @@ async function main() {
 }
 
 main().catch(err => {
-  console.error('Verification failed:', err);
-  process.exit(1);
+  console.error('Verification failed unexpectedly (network/runtime error, not an auth verdict):', err);
+  process.exit(3);
 });
