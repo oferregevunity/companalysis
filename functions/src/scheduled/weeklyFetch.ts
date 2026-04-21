@@ -1,7 +1,9 @@
 import { onSchedule } from 'firebase-functions/v2/scheduler';
 import * as admin from 'firebase-admin';
 import { getFirestore } from 'firebase-admin/firestore';
-import { fetchAndStoreGenre } from '../sensorTower/fetchTopApps';
+import { runCreativePipelineForGenre } from '../creativeInsights/runForGenre';
+import { reapStaleCreatives } from '../adIntel/reaper';
+import { fetchAndStoreGenre, getLastNWeeks } from '../sensorTower/fetchTopApps';
 import { sensorTowerAuthToken } from '../sensorTower/client';
 
 const db = getFirestore('companalysis');
@@ -42,7 +44,37 @@ export const weeklyFetch = onSchedule(
         allErrors.push(`Failed to process ${genre.name}: ${error}`);
       }
     }
-    
+
+    // Creative intelligence pipeline — per-genre, only if enabled
+    const [prevWeek] = getLastNWeeks(1);
+    for (const doc of genresSnapshot.docs) {
+      const genre = { id: doc.id, ...doc.data() } as any;
+      if (!genre.enableCreatives) continue;
+      try {
+        const r = await runCreativePipelineForGenre(
+          genre,
+          prevWeek.startDate,
+          prevWeek.endDate,
+          authToken,
+        );
+        console.log(
+          `Creative pipeline ${genre.name}: creatives=${r.creativeCount} scored=${r.scoredCount} insights=${r.insightsGenerated}`,
+        );
+        if (r.partialErrors.length) {
+          allErrors.push(...r.partialErrors.map(e => `[${genre.name}] ${e}`));
+        }
+      } catch (err) {
+        allErrors.push(`Creatives failed ${genre.name}: ${err instanceof Error ? err.message : err}`);
+      }
+    }
+
+    try {
+      const reaped = await reapStaleCreatives();
+      console.log(`Reaped ${reaped} stale creatives`);
+    } catch (err) {
+      allErrors.push(`Creative reaper failed: ${err instanceof Error ? err.message : err}`);
+    }
+
     await logRef.update({
       completedAt: admin.firestore.FieldValue.serverTimestamp(),
       status: allErrors.length === 0 ? 'completed' : 'failed',

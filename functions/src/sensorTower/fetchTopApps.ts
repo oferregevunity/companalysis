@@ -217,7 +217,7 @@ function formatDateStr(d: Date): string {
   return `${y}-${m}-${day}`;
 }
 
-function getLastNWeeks(n: number): { week: string; startDate: string; endDate: string }[] {
+export function getLastNWeeks(n: number): { week: string; startDate: string; endDate: string }[] {
   const weeks: { week: string; startDate: string; endDate: string }[] = [];
   const now = new Date();
   const dayOfWeek = now.getDay() || 7;
