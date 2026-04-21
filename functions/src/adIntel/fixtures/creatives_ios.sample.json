@@ -1,0 +1,534 @@
+{
+  "count": 1153,
+  "available_networks": [
+    "Admob",
+    "Applovin",
+    "BidMachine",
+    "Chartboost",
+    "Digital Turbine",
+    "Facebook",
+    "InMobi",
+    "Instagram",
+    "Meta Audience Network",
+    "Mintegral",
+    "Moloco",
+    "Smaato",
+    "Supersonic",
+    "TikTok",
+    "Unity",
+    "Verve",
+    "Vungle",
+    "Youtube"
+  ],
+  "ad_units": [
+    {
+      "id": "3963f3cfca803adc",
+      "app_id": "5f16a8019f7b275235017614",
+      "network": "Instagram",
+      "phashion_group": "3963f3cfca803adc",
+      "ad_type": "video",
+      "first_seen_at": "2024-02-27",
+      "last_seen_at": "2024-06-04",
+      "creatives": [
+        {
+          "id": "3963f3cfca803adc",
+          "creative_url": "https://x-ad-assets.s3.amazonaws.com/media_asset/3dd4b761698be71a/media",
+          "preview_url": "https://x-ad-assets.s3.amazonaws.com/media_asset/3dd4b761698be71a/preview",
+          "thumb_url": "https://x-ad-assets.s3.amazonaws.com/media_asset/3dd4b761698be71a/thumb",
+          "video_duration": 59,
+          "width": 1080,
+          "height": 1350,
+          "title": "Unwind and relax with Royal Match 🥳",
+          "button_text": "Play Game",
+          "message": "No ADS and FREE 👉"
+        }
+      ],
+      "ad_formats": [
+        "other"
+      ],
+      "share": 0.40158,
+      "breakdown": {
+        "date": [
+          [
+            [
+              "2023-01-01T00:00:00Z",
+              "2023-03-31T00:00:00Z"
+            ],
+            0
+          ],
+          [
+            [
+              "2023-04-01T00:00:00Z",
+              "2023-06-30T00:00:00Z"
+            ],
+            0
+          ],
+          [
+            [
+              "2023-07-01T00:00:00Z",
+              "2023-09-30T00:00:00Z"
+            ],
+            0
+          ],
+          [
+            [
+              "2023-10-01T00:00:00Z",
+              "2023-12-31T00:00:00Z"
+            ],
+            0
+          ],
+          [
+            [
+              "2024-01-01T00:00:00Z",
+              "2024-03-31T00:00:00Z"
+            ],
+            0.229678
+          ],
+          [
+            [
+              "2024-04-01T00:00:00Z",
+              "2024-06-30T00:00:00Z"
+            ],
+            1
+          ],
+          [
+            [
+              "2024-07-01T00:00:00Z",
+              "2024-09-30T00:00:00Z"
+            ],
+            0
+          ],
+          [
+            [
+              "2024-10-01T00:00:00Z",
+              "2024-12-31T00:00:00Z"
+            ],
+            0
+          ]
+        ],
+        "dimensions": [
+          [
+            "1080x1350",
+            1
+          ]
+        ]
+      },
+      "top_publishers": {
+        "count": 0,
+        "data": []
+      }
+    },
+    {
+      "id": "a1bde3c4039bc916",
+      "app_id": "5f16a8019f7b275235017614",
+      "network": "Instagram",
+      "phashion_group": "a1bde3c4039bc916",
+      "ad_type": "video",
+      "first_seen_at": "2024-08-02",
+      "last_seen_at": "2024-11-05",
+      "creatives": [
+        {
+          "id": "a1bde3c4039bc916",
+          "creative_url": "https://x-ad-assets.s3.amazonaws.com/media_asset/a50aa76aa09014d0/media",
+          "preview_url": "https://x-ad-assets.s3.amazonaws.com/media_asset/a50aa76aa09014d0/preview",
+          "thumb_url": "https://x-ad-assets.s3.amazonaws.com/media_asset/a50aa76aa09014d0/thumb",
+          "video_duration": 59,
+          "width": 1080,
+          "height": 1350,
+          "title": "Download for endless FUN 🥳",
+          "button_text": "Install Now",
+          "message": "No ADS and FREE 👉"
+        }
+      ],
+      "ad_formats": [
+        "other"
+      ],
+      "share": 0.178552,
+      "breakdown": {
+        "date": [
+          [
+            [
+              "2023-01-01T00:00:00Z",
+              "2023-03-31T00:00:00Z"
+            ],
+            0
+          ],
+          [
+            [
+              "2023-04-01T00:00:00Z",
+              "2023-06-30T00:00:00Z"
+            ],
+            0
+          ],
+          [
+            [
+              "2023-07-01T00:00:00Z",
+              "2023-09-30T00:00:00Z"
+            ],
+            0
+          ],
+          [
+            [
+              "2023-10-01T00:00:00Z",
+              "2023-12-31T00:00:00Z"
+            ],
+            0
+          ],
+          [
+            [
+              "2024-01-01T00:00:00Z",
+              "2024-03-31T00:00:00Z"
+            ],
+            0
+          ],
+          [
+            [
+              "2024-04-01T00:00:00Z",
+              "2024-06-30T00:00:00Z"
+            ],
+            0
+          ],
+          [
+            [
+              "2024-07-01T00:00:00Z",
+              "2024-09-30T00:00:00Z"
+            ],
+            1
+          ],
+          [
+            [
+              "2024-10-01T00:00:00Z",
+              "2024-12-31T00:00:00Z"
+            ],
+            0
+          ]
+        ],
+        "dimensions": [
+          [
+            "1080x1350",
+            1
+          ]
+        ]
+      },
+      "top_publishers": {
+        "count": 0,
+        "data": []
+      }
+    },
+    {
+      "id": "5704f438b1728460",
+      "app_id": "5f16a8019f7b275235017614",
+      "network": "Instagram",
+      "phashion_group": "5704f438b1728460",
+      "ad_type": "video",
+      "first_seen_at": "2024-10-09",
+      "last_seen_at": "2025-03-08",
+      "creatives": [
+        {
+          "id": "5704f438b1728460",
+          "creative_url": "https://x-ad-assets.s3.amazonaws.com/media_asset/53b3b096127959a6/media",
+          "preview_url": "https://x-ad-assets.s3.amazonaws.com/media_asset/53b3b096127959a6/preview",
+          "thumb_url": "https://x-ad-assets.s3.amazonaws.com/media_asset/53b3b096127959a6/thumb",
+          "video_duration": 60,
+          "width": 1080,
+          "height": 1350,
+          "title": "Download for endless FUN 🥳",
+          "button_text": "Install Now",
+          "message": "No ADS and FREE 👉"
+        }
+      ],
+      "ad_formats": [
+        "other"
+      ],
+      "share": 0.172177,
+      "breakdown": {
+        "date": [
+          [
+            [
+              "2023-01-01T00:00:00Z",
+              "2023-03-31T00:00:00Z"
+            ],
+            0
+          ],
+          [
+            [
+              "2023-04-01T00:00:00Z",
+              "2023-06-30T00:00:00Z"
+            ],
+            0
+          ],
+          [
+            [
+              "2023-07-01T00:00:00Z",
+              "2023-09-30T00:00:00Z"
+            ],
+            0
+          ],
+          [
+            [
+              "2023-10-01T00:00:00Z",
+              "2023-12-31T00:00:00Z"
+            ],
+            0
+          ],
+          [
+            [
+              "2024-01-01T00:00:00Z",
+              "2024-03-31T00:00:00Z"
+            ],
+            0
+          ],
+          [
+            [
+              "2024-04-01T00:00:00Z",
+              "2024-06-30T00:00:00Z"
+            ],
+            0
+          ],
+          [
+            [
+              "2024-07-01T00:00:00Z",
+              "2024-09-30T00:00:00Z"
+            ],
+            0
+          ],
+          [
+            [
+              "2024-10-01T00:00:00Z",
+              "2024-12-31T00:00:00Z"
+            ],
+            1
+          ]
+        ],
+        "dimensions": [
+          [
+            "1080x1350",
+            1
+          ]
+        ]
+      },
+      "top_publishers": {
+        "count": 0,
+        "data": []
+      }
+    },
+    {
+      "id": "be4ace9f02d43bc2",
+      "app_id": "5f16a8019f7b275235017614",
+      "network": "Instagram",
+      "phashion_group": "be4ace9f02d43bc2",
+      "ad_type": "video",
+      "first_seen_at": "2023-06-21",
+      "last_seen_at": "2023-09-23",
+      "creatives": [
+        {
+          "id": "be4ace9f02d43bc2",
+          "creative_url": "https://x-ad-assets.s3.amazonaws.com/media_asset/cf4b7f9af2c37870/media",
+          "preview_url": "https://x-ad-assets.s3.amazonaws.com/media_asset/cf4b7f9af2c37870/preview",
+          "thumb_url": "https://x-ad-assets.s3.amazonaws.com/media_asset/cf4b7f9af2c37870/thumb",
+          "video_duration": 59,
+          "width": 1080,
+          "height": 1350,
+          "title": "❓Puedes salvar al rey ❓",
+          "button_text": "Play Game",
+          "message": "SIN ANUNCIOS y GRATIS👉"
+        },
+        {
+          "id": "cbfc3b3451c8a5b6",
+          "creative_url": "https://x-ad-assets.s3.amazonaws.com/media_asset/cf4b7f9af2c37870/media",
+          "preview_url": "https://x-ad-assets.s3.amazonaws.com/media_asset/cf4b7f9af2c37870/preview",
+          "thumb_url": "https://x-ad-assets.s3.amazonaws.com/media_asset/cf4b7f9af2c37870/thumb",
+          "video_duration": 59,
+          "width": 1080,
+          "height": 1350,
+          "title": "Can you save the King ❓",
+          "button_text": "Play Game",
+          "message": "No ADS and FREE 👉"
+        }
+      ],
+      "ad_formats": [
+        "other"
+      ],
+      "share": 0.040665,
+      "breakdown": {
+        "date": [
+          [
+            [
+              "2023-01-01T00:00:00Z",
+              "2023-03-31T00:00:00Z"
+            ],
+            0
+          ],
+          [
+            [
+              "2023-04-01T00:00:00Z",
+              "2023-06-30T00:00:00Z"
+            ],
+            1
+          ],
+          [
+            [
+              "2023-07-01T00:00:00Z",
+              "2023-09-30T00:00:00Z"
+            ],
+            0
+          ],
+          [
+            [
+              "2023-10-01T00:00:00Z",
+              "2023-12-31T00:00:00Z"
+            ],
+            0
+          ],
+          [
+            [
+              "2024-01-01T00:00:00Z",
+              "2024-03-31T00:00:00Z"
+            ],
+            0
+          ],
+          [
+            [
+              "2024-04-01T00:00:00Z",
+              "2024-06-30T00:00:00Z"
+            ],
+            0
+          ],
+          [
+            [
+              "2024-07-01T00:00:00Z",
+              "2024-09-30T00:00:00Z"
+            ],
+            0
+          ],
+          [
+            [
+              "2024-10-01T00:00:00Z",
+              "2024-12-31T00:00:00Z"
+            ],
+            0
+          ]
+        ],
+        "dimensions": [
+          [
+            "1080x1350",
+            1
+          ]
+        ]
+      },
+      "top_publishers": {
+        "count": 0,
+        "data": []
+      }
+    },
+    {
+      "id": "127d265df893b20e",
+      "app_id": "5f16a8019f7b275235017614",
+      "network": "Instagram",
+      "phashion_group": "127d265df893b20e",
+      "ad_type": "video",
+      "first_seen_at": "2024-04-16",
+      "last_seen_at": "2024-07-09",
+      "creatives": [
+        {
+          "id": "127d265df893b20e",
+          "creative_url": "https://x-ad-assets.s3.amazonaws.com/media_asset/69f7176a29b656f8/media",
+          "preview_url": "https://x-ad-assets.s3.amazonaws.com/media_asset/69f7176a29b656f8/preview",
+          "thumb_url": "https://x-ad-assets.s3.amazonaws.com/media_asset/69f7176a29b656f8/thumb",
+          "video_duration": 60,
+          "width": 1080,
+          "height": 1920,
+          "title": "Descarga para DIVERSIÓN infinita 🥳",
+          "button_text": "Play Game",
+          "message": "Sin ANUNCIOS y GRATIS 👉"
+        },
+        {
+          "id": "6d4053c48abd8b3e",
+          "creative_url": "https://x-ad-assets.s3.amazonaws.com/media_asset/69f7176a29b656f8/media",
+          "preview_url": "https://x-ad-assets.s3.amazonaws.com/media_asset/69f7176a29b656f8/preview",
+          "thumb_url": "https://x-ad-assets.s3.amazonaws.com/media_asset/69f7176a29b656f8/thumb",
+          "video_duration": 60,
+          "width": 1080,
+          "height": 1920,
+          "title": "Unwind and relax with Royal Match 🥳",
+          "button_text": "Play Game",
+          "message": "No ADS and FREE 👉"
+        }
+      ],
+      "ad_formats": [
+        "other"
+      ],
+      "share": 0.039881,
+      "breakdown": {
+        "date": [
+          [
+            [
+              "2023-01-01T00:00:00Z",
+              "2023-03-31T00:00:00Z"
+            ],
+            0
+          ],
+          [
+            [
+              "2023-04-01T00:00:00Z",
+              "2023-06-30T00:00:00Z"
+            ],
+            0
+          ],
+          [
+            [
+              "2023-07-01T00:00:00Z",
+              "2023-09-30T00:00:00Z"
+            ],
+            0
+          ],
+          [
+            [
+              "2023-10-01T00:00:00Z",
+              "2023-12-31T00:00:00Z"
+            ],
+            0
+          ],
+          [
+            [
+              "2024-01-01T00:00:00Z",
+              "2024-03-31T00:00:00Z"
+            ],
+            0
+          ],
+          [
+            [
+              "2024-04-01T00:00:00Z",
+              "2024-06-30T00:00:00Z"
+            ],
+            0
+          ],
+          [
+            [
+              "2024-07-01T00:00:00Z",
+              "2024-09-30T00:00:00Z"
+            ],
+            1
+          ],
+          [
+            [
+              "2024-10-01T00:00:00Z",
+              "2024-12-31T00:00:00Z"
+            ],
+            0
+          ]
+        ],
+        "dimensions": [
+          [
+            "1080x1920",
+            1
+          ]
+        ]
+      },
+      "top_publishers": {
+        "count": 0,
+        "data": []
+      }
+    }
+  ]
+}

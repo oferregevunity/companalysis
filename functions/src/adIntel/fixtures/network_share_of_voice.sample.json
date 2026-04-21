@@ -1,0 +1,37 @@
+[
+  {
+    "app_id": "5f16a8019f7b275235017614",
+    "country": "US",
+    "network": "Admob",
+    "date": "2024-01-01",
+    "sov": 0.004134
+  },
+  {
+    "app_id": "5f16a8019f7b275235017614",
+    "country": "US",
+    "network": "Applovin",
+    "date": "2024-01-01",
+    "sov": 0.02928
+  },
+  {
+    "app_id": "5f16a8019f7b275235017614",
+    "country": "US",
+    "network": "BidMachine",
+    "date": "2024-01-01",
+    "sov": 0.088068
+  },
+  {
+    "app_id": "5f16a8019f7b275235017614",
+    "country": "US",
+    "network": "Chartboost",
+    "date": "2024-01-01",
+    "sov": 0.013901
+  },
+  {
+    "app_id": "5f16a8019f7b275235017614",
+    "country": "US",
+    "network": "Digital Turbine",
+    "date": "2024-01-01",
+    "sov": 0.026819
+  }
+]
