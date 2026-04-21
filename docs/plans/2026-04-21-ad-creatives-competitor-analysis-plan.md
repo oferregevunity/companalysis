@@ -135,7 +135,171 @@ git commit -m "chore(ad-intel): capture sample response fixtures for client typi
 
 ---
 
+### Task 0.3: Verify `unifiedAppId` compatibility with Ad Intel (BLOCKER)
+
+Our existing `snapshots/{snapshotId}/apps/{appId}` docs store `unifiedAppId` as whatever `/v1/unified/sales_report_estimates_comparison_attributes` returned in `item.app_id`. Task 0.2 confirmed Ad Intel's `app_ids` param wants unified Mongo-style IDs (e.g. `5f16a8019f7b275235017614`) — but we have not yet proven that our STORED values are that format. If they happen to be store IDs, every Phase 1 Ad Intel call will silently return `count: 0` and we'll burn weeks debugging empty pipelines.
+
+This task is a 2-minute diagnostic: pull one real `unifiedAppId` from Firestore, hit Ad Intel with it, confirm non-empty `ad_units`.
+
+**Files:**
+- Create: `scripts/verify-unified-app-id.ts`
+
+**Step 1: Write the script**
+
+```ts
+/**
+ * Verifies that our Firestore `snapshots/.../apps[].unifiedAppId` values are
+ * the same unified Mongo-style IDs that Sensor Tower's Ad Intel endpoint
+ * expects in its `app_ids` param.
+ *
+ * Run from the repo root of a feat/ad-creatives worktree:
+ *   NODE_PATH=functions/node_modules \
+ *   SENSOR_TOWER_AUTH_TOKEN="$(firebase functions:secrets:access SENSOR_TOWER_AUTH_TOKEN)" \
+ *   npx tsx scripts/verify-unified-app-id.ts
+ *
+ * Exit codes:
+ *   0 = compatible (Ad Intel returned a 200 with a non-empty ad_units for a
+ *                    sampled unifiedAppId, over a wide 2-year window)
+ *   1 = empty for every sampled app (IDs are NOT compatible)
+ *   2 = missing env var / no apps in Firestore / no credentials
+ *   3 = unexpected runtime failure (not an auth verdict)
+ */
+import fetch from 'node-fetch';
+import * as admin from 'firebase-admin';
+
+const BASE_URL = 'https://api.sensortower.com/v1';
+
+async function main() {
+  const token = process.env.SENSOR_TOWER_AUTH_TOKEN?.trim();
+  if (!token) {
+    console.error('Set SENSOR_TOWER_AUTH_TOKEN (copy from Firebase Secret Manager).');
+    process.exit(2);
+  }
+
+  // Uses application-default credentials; `firebase login` + a configured
+  // .firebaserc is enough because the Firestore SDK picks up the project.
+  admin.initializeApp();
+  const db = admin.firestore();
+  db.settings({ databaseId: 'companalysis' });
+
+  // Pull the most recent monthly snapshot, regardless of genre.
+  const snaps = await db
+    .collection('snapshots')
+    .where('month', '!=', null)
+    .orderBy('month', 'desc')
+    .limit(1)
+    .get();
+  if (snaps.empty) {
+    console.error('No snapshots in Firestore to sample from.');
+    process.exit(2);
+  }
+  const latest = snaps.docs[0];
+  const appsSnap = await latest.ref.collection('apps').limit(5).get();
+  if (appsSnap.empty) {
+    console.error(`Snapshot ${latest.id} has no apps.`);
+    process.exit(2);
+  }
+
+  const sampled = appsSnap.docs.map(d => {
+    const data = d.data();
+    return {
+      unifiedAppId: (data.unifiedAppId as string) ?? d.id,
+      name: (data.unifiedAppName as string) ?? '(unknown)',
+      iosAppId: (data.iosAppId as string | null) ?? null,
+    };
+  });
+
+  console.log(`Testing ${sampled.length} apps from snapshot ${latest.id}:`);
+  for (const app of sampled) {
+    console.log(`  - ${app.name} (unified=${app.unifiedAppId}, ios=${app.iosAppId ?? '-'})`);
+  }
+
+  // Wide window maximizes the chance of non-empty results without costing much.
+  const qs = (id: string) =>
+    new URLSearchParams({
+      auth_token: token,
+      app_ids: id,
+      start_date: '2023-01-01',
+      end_date: '2026-04-01',
+      networks: 'Instagram',
+      countries: 'US',
+      ad_types: 'video',
+      limit: '5',
+    }).toString();
+
+  let anyHit = false;
+  for (const app of sampled) {
+    const res = await fetch(`${BASE_URL}/unified/ad_intel/creatives?${qs(app.unifiedAppId)}`);
+    const status = res.status;
+    const body: any = await res.json().catch(() => ({}));
+    const count = Array.isArray(body.ad_units) ? body.ad_units.length : 0;
+    console.log(`  → ${app.name}: status=${status} ad_units=${count}`);
+    if (status === 200 && count > 0) {
+      anyHit = true;
+    }
+  }
+
+  if (anyHit) {
+    console.log('\n✅ Our unifiedAppId values ARE compatible with Ad Intel. Phase 1 GO.');
+    process.exit(0);
+  }
+  console.error('\n❌ Every sampled app returned empty ad_units. Either:');
+  console.error('   (a) The IDs are not Mongo-style unified IDs, OR');
+  console.error('   (b) None of the sampled apps have any Instagram creatives in the last 3 years.');
+  console.error('   Retry with more samples / different networks before concluding (a).');
+  process.exit(1);
+}
+
+main().catch(err => {
+  console.error('Verification failed unexpectedly (network/runtime error, not an auth verdict):', err);
+  process.exit(3);
+});
+```
+
+**Step 2: Run**
+
+```bash
+NODE_PATH=functions/node_modules \
+  SENSOR_TOWER_AUTH_TOKEN="$(firebase functions:secrets:access SENSOR_TOWER_AUTH_TOKEN)" \
+  npx tsx scripts/verify-unified-app-id.ts
+```
+
+**Step 3: Branch based on result**
+- **Exit 0** → Our `unifiedAppId` is the Ad Intel key. Phase 1 proceeds without any ID-resolution step.
+- **Exit 1 for every sample** → First, **widen the sample** by bumping `limit(5)` to `limit(20)` and trying multiple networks (`TikTok`, `Facebook`). If still empty for all 20, then our stored IDs are not compatible; STOP and raise with the user. A resolution step (calling `search_entities` with our iOS/Android IDs to get unified IDs) must be added to `fetchTopApps.ts` before Phase 1 continues.
+- **Any other exit** → surface the error and stop.
+
+**Step 4: Commit**
+
+```bash
+git add scripts/verify-unified-app-id.ts
+git commit -m "chore(ad-intel): add unifiedAppId compatibility verification script"
+```
+
+---
+
+### Note on watchlist input and app-metadata lookup (decisions carried into later tasks)
+
+Two small architectural decisions, recorded here so later tasks reference them consistently:
+
+1. **Watchlist input is free-text with autocomplete.** The Settings UI uses a proxy API route that calls Sensor Tower's `search_entities` on each keystroke (debounced). The user picks a result, and the frontend sends the resolved `unifiedAppId` to `POST creatives/watchlist/add`. The stored shape in `watchlist/team` stays a bare `{ appIds: string[] }` — the UI renders names by joining against the `appNames` cache (below). See Task 1.3 for the helper and Task 4.3 / Task 5.9 for the route + UI.
+
+2. **App metadata lives in a separate `appNames` cache collection.** Creative docs (`creativeSnapshots/.../creatives`, `creativeLatest`) carry only `appId` (unified ID) — NOT duplicated name/publisher/store IDs. The cache collection `appNames/{unifiedAppId}` holds `{ name, publisherName, iosAppId, androidAppId, updatedAt }` and is populated (upserted) whenever the orchestrator touches an app. The `/creatives` page hook does one `get()` per unique `appId` on the page (typically < 25) and joins client-side. This keeps creative docs lean and lets us enrich metadata without a migration.
+
+Both decisions are cross-referenced from the relevant tasks below.
+
+---
+
 ## Phase 1 — Data Ingestion (Cloud Functions)
+
+> **Note on consistency across Phase 1 tasks.** Tasks 1.1 and 1.2 were revised after Task 0.2 captured real fixtures (commit `13846f0`). The code stubs in Tasks 1.3–1.6 still reference the pre-revision field names (`creativeId`, `shareOfVoice`, `previewUrl`/`videoUrl`/`thumbnailUrl`, `countries[]`, `aspectRatio`). When implementing those tasks:
+>
+> - Use the revised `RawCreative` shape: `id`, `phashionGroup`, `mediaUrl`, `previewUrl`, `thumbnailUrl`, `share`, `videoDurationSec`, `width`, `height`, `title`, `message`, `buttonText`, `variantCount`, `adFormats`, `breakdown`.
+> - Dedup across networks by `phashionGroup` (fall back to `id`) — NOT by `creativeId`.
+> - Store `country` on each creative instead of a `countries[]` array (our scrape is scoped to one country per genre).
+> - `StoredCreative` (Task 1.5) should record a `networks: QueryableAdNetwork[]` array aggregated across all networks where we saw the same `phashionGroup`, plus `maxShare` (max of `share` across those networks) — NOT `shareOfVoice`.
+> - Task 1.5's orchestrator must also **upsert** `appNames/{unifiedAppId}` with `{ name, publisherName, iosAppId, androidAppId, updatedAt }` for every app it processes. This powers the `/creatives` UI join and the watchlist display (see the "Note on watchlist input and app-metadata lookup" after Task 0.3).
+> - Task 1.3's watchlist stays a bare `{ appIds: string[] }`; input resolution happens in the frontend via a proxy route that calls Sensor Tower's `search_entities` on each keystroke. The API route is added in Task 4.3; the UI in Task 5.9.
 
 ### Task 1.1: Ad Intel TypeScript types
 
