@@ -93,6 +93,7 @@ export const compAnalysisApi = onRequest(
           if (updates.country !== undefined) allowed.country = updates.country;
           if (updates.monthsBack !== undefined) allowed.monthsBack = updates.monthsBack;
           if (updates.active !== undefined) allowed.active = updates.active;
+          if (updates.enableCreatives !== undefined) allowed.enableCreatives = updates.enableCreatives;
           await genreRef.update(allowed);
           sendSuccess(res, { success: true });
           return;

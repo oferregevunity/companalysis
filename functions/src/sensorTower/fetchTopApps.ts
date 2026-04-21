@@ -14,6 +14,7 @@ export interface GenreDoc {
   country?: string;
   monthsBack?: number;
   active: boolean;
+  enableCreatives?: boolean;
 }
 
 function getLastNMonths(n: number): { month: string; startDate: string; endDate: string }[] {
