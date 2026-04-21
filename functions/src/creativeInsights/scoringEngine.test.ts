@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { computeLongevity, computeNetworkBreadth } from './scoringEngine';
+import { computeLongevity, computeNetworkBreadth, computeImpressionMomentum } from './scoringEngine';
 import type { AdNetwork } from '../adIntel/types';
 
 describe('computeLongevity', () => {
@@ -44,5 +44,38 @@ describe('computeNetworkBreadth', () => {
   it('deduplicates', () => {
     expect(computeNetworkBreadth(['Facebook', 'Facebook'])).toBeGreaterThanOrEqual(3);
     expect(computeNetworkBreadth(['Facebook', 'Facebook'])).toBeLessThanOrEqual(5);
+  });
+});
+
+describe('computeImpressionMomentum', () => {
+  it('returns 0 when no data', () => {
+    expect(computeImpressionMomentum({ sovByWeek: {}, countriesByWeek: {} })).toBe(0);
+  });
+  it('returns 0 when only one observation per series', () => {
+    expect(computeImpressionMomentum({
+      sovByWeek: { w1: 0.1 },
+      countriesByWeek: { w1: 1 },
+    })).toBe(0);
+  });
+  it('rewards accelerating SoV', () => {
+    const score = computeImpressionMomentum({
+      sovByWeek: { w1: 0.01, w2: 0.03, w3: 0.08, w4: 0.20 },
+      countriesByWeek: {},
+    });
+    expect(score).toBeGreaterThan(15);
+  });
+  it('falls back to country-count growth when SoV missing', () => {
+    const score = computeImpressionMomentum({
+      sovByWeek: {},
+      countriesByWeek: { w1: 1, w2: 2, w3: 4, w4: 8 },
+    });
+    expect(score).toBeGreaterThan(10);
+  });
+  it('prefers SoV over countries when both present', () => {
+    const withSov = computeImpressionMomentum({
+      sovByWeek: { w1: 0.01, w2: 0.02 },
+      countriesByWeek: { w1: 10, w2: 1 },
+    });
+    expect(withSov).toBeGreaterThan(0);
   });
 });
