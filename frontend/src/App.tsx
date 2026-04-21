@@ -5,6 +5,7 @@ import Dashboard from './pages/Dashboard';
 import GenreDetail from './pages/GenreDetail';
 import Settings from './pages/Settings';
 import Insights from './pages/Insights';
+import Creatives from './pages/Creatives';
 
 function App() {
   return (
@@ -16,6 +17,7 @@ function App() {
             <Route path="/genre/:genreId" element={<GenreDetail />} />
             <Route path="/settings" element={<Settings />} />
             <Route path="/insights" element={<Insights />} />
+            <Route path="/creatives" element={<Creatives />} />
           </Routes>
         </Layout>
       </AuthGuard>

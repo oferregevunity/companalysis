@@ -30,6 +30,17 @@ export function Layout({ children }: { children: ReactNode }) {
       ),
     },
     {
+      path: '/creatives',
+      label: 'Creatives',
+      match: (p: string) => p === '/creatives',
+      icon: (
+        <svg className="w-[18px] h-[18px]" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" d="M3.375 7.5h10.5a1.125 1.125 0 0 1 1.125 1.125v7.125a1.125 1.125 0 0 1-1.125 1.125H3.375A1.125 1.125 0 0 1 2.25 15.75V8.625A1.125 1.125 0 0 1 3.375 7.5Z" />
+          <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 9.75h3.375a1.125 1.125 0 0 1 1.125 1.125v1.5a1.125 1.125 0 0 1-1.125 1.125H15.75m0-3.75h3.375a1.125 1.125 0 0 1 1.125 1.125v1.5a1.125 1.125 0 0 1-1.125 1.125H15.75M6 12h.008v.008H6V12Zm2.25 0h.008v.008H8.25V12Zm2.25 0h.008v.008h-.008V12Zm2.25 0h.008v.008h-.008V12ZM18.259 5.715 18 6.75l-.259-1.035a3.375 3.375 0 0 0-2.455-2.456L14.25 3l1.036-.259a3.375 3.375 0 0 0 2.455-2.456L18 .75l.259 1.035a3.375 3.375 0 0 0 2.455 2.456L21.75 3l-1.036.259a3.375 3.375 0 0 0-2.455 2.456Z" />
+        </svg>
+      ),
+    },
+    {
       path: '/settings',
       label: 'Settings',
       match: (p: string) => p === '/settings',
