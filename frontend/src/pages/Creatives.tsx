@@ -5,6 +5,8 @@ import { useCreativesForGenre } from '../hooks/useCreativesForGenre';
 import { getCreativeWeekBounds, getLatestCreativeWeek } from '../lib/creativesWeek';
 import { triggerCreativesForGenre } from '../lib/creativesApi';
 import { AIHighlightsStrip } from '../components/creatives/AIHighlightsStrip';
+import { CreativeGallery } from '../components/creatives/CreativeGallery';
+import { useAppNames } from '../hooks/useAppNames';
 
 const STORAGE_KEY = 'creatives.selectedGenreId';
 
@@ -62,7 +64,21 @@ export default function Creatives() {
   }, []);
 
   const { data: insightDoc, loading: insightLoading } = useCreativeInsights(selectedGenreId, latestWeek);
-  const { creatives: joinedCreatives } = useCreativesForGenre(selectedGenreId, latestWeek);
+  const { creatives: joinedCreatives, loading: creativesLoading } = useCreativesForGenre(selectedGenreId, latestWeek);
+
+  const rankMap = useMemo(() => {
+    const m = new Map<string, number>();
+    if (!insightDoc?.winners) return m;
+    for (const w of insightDoc.winners) {
+      if (w.rank <= 10) {
+        m.set(w.creativeId, w.rank);
+      }
+    }
+    return m;
+  }, [insightDoc]);
+
+  const appIds = useMemo(() => joinedCreatives.map((c) => c.appId), [joinedCreatives]);
+  const appNames = useAppNames(appIds);
 
   const lastAnalyzed = useMemo(() => {
     const d = generatedAtToDate(insightDoc?.generatedAt);
@@ -140,7 +156,18 @@ export default function Creatives() {
         onScrollToCreative={onScrollToCreative}
       />
 
-      <div />
+      {creativesLoading ? (
+        <div className="text-center py-12 text-gray-400">Loading creatives…</div>
+      ) : joinedCreatives.length === 0 ? (
+        <div className="text-center py-12 text-gray-400">No creatives for this genre yet.</div>
+      ) : (
+        <CreativeGallery
+          creatives={joinedCreatives}
+          rankMap={rankMap}
+          appNames={appNames}
+          onOpen={() => {}}
+        />
+      )}
     </div>
   );
 }
