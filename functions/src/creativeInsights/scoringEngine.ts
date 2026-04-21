@@ -107,3 +107,30 @@ export function computeFreshnessAdjustedPersistence(
   const pts = 25 * (0.5 + 0.5 * Math.min(1, ratio));
   return Math.min(25, Math.max(0, Math.round(pts * 10) / 10));
 }
+
+export interface SubScores {
+  longevity: number;
+  networkBreadth: number;
+  impressionMomentum: number;
+  freshnessAdjustedPersistence: number;
+}
+
+/**
+ * Composite "Winning Creative Score" on a 0-100 scale. Each sub-score
+ * contributes up to 25 points; the composite is their sum (not an average).
+ */
+export function computeWinningCreativeScore(s: SubScores): number {
+  const sum = s.longevity + s.networkBreadth + s.impressionMomentum + s.freshnessAdjustedPersistence;
+  return Math.round(Math.max(0, Math.min(100, sum)) * 10) / 10;
+}
+
+export function selectTopWinners<T extends { score: number }>(
+  items: T[],
+  topK: number,
+  threshold: number,
+): T[] {
+  return items
+    .filter(i => i.score >= threshold)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, topK);
+}

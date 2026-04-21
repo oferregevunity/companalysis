@@ -4,6 +4,8 @@ import {
   computeNetworkBreadth,
   computeImpressionMomentum,
   computeFreshnessAdjustedPersistence,
+  computeWinningCreativeScore,
+  selectTopWinners,
 } from './scoringEngine';
 import type { AdNetwork } from '../adIntel/types';
 
@@ -112,5 +114,36 @@ describe('computeFreshnessAdjustedPersistence', () => {
       firstSeen: 'not-a-date',
       durationDays: 20,
     }, now)).toBe(0);
+  });
+});
+
+describe('computeWinningCreativeScore', () => {
+  it('averages 4 sub-scores to a 0-100 composite', () => {
+    expect(computeWinningCreativeScore({
+      longevity: 20, networkBreadth: 20, impressionMomentum: 20, freshnessAdjustedPersistence: 20,
+    })).toBe(80);
+  });
+  it('clamps to the 0-100 range', () => {
+    expect(computeWinningCreativeScore({
+      longevity: 25, networkBreadth: 25, impressionMomentum: 25, freshnessAdjustedPersistence: 25,
+    })).toBe(100);
+  });
+});
+
+describe('selectTopWinners', () => {
+  it('returns top K above threshold, sorted desc', () => {
+    const inputs = Array.from({ length: 15 }, (_, i) => ({
+      creativeKey: `c${i}`,
+      score: 10 + i * 5,
+    }));
+    const winners = selectTopWinners(inputs, 10, 60);
+    expect(winners.length).toBeLessThanOrEqual(10);
+    expect(winners.every(w => w.score >= 60)).toBe(true);
+    for (let i = 1; i < winners.length; i++) {
+      expect(winners[i - 1].score).toBeGreaterThanOrEqual(winners[i].score);
+    }
+  });
+  it('returns empty array when nothing beats threshold', () => {
+    expect(selectTopWinners([{ id: 'a', score: 10 }], 5, 60)).toEqual([]);
   });
 });
