@@ -1,3 +1,5 @@
+import type { AdNetwork } from '../adIntel/types';
+
 /**
  * Sub-score for how long a creative has been running.
  * Logarithmic curve calibrated so:
@@ -13,5 +15,17 @@ export function computeLongevity(days: number): number {
   if (days >= 60) return 25;
   const ratio = Math.log(days + 1) / Math.log(61);
   const scaled = 25 * Math.pow(ratio, 1.67);
+  return Math.round(scaled * 10) / 10;
+}
+
+/**
+ * Sub-score for cross-network breadth. A concept running on more networks
+ * has more evidence of product/market fit. Linear 0→25 as network count
+ * goes 0→7, capped at 7.
+ */
+export function computeNetworkBreadth(networks: readonly AdNetwork[]): number {
+  const count = new Set(networks).size;
+  if (count <= 0) return 0;
+  const scaled = Math.min(25, (count / 7) * 25);
   return Math.round(scaled * 10) / 10;
 }
