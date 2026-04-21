@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { computeLongevity, computeNetworkBreadth, computeImpressionMomentum } from './scoringEngine';
+import {
+  computeLongevity,
+  computeNetworkBreadth,
+  computeImpressionMomentum,
+  computeFreshnessAdjustedPersistence,
+} from './scoringEngine';
 import type { AdNetwork } from '../adIntel/types';
 
 describe('computeLongevity', () => {
@@ -77,5 +82,35 @@ describe('computeImpressionMomentum', () => {
       countriesByWeek: { w1: 10, w2: 1 },
     });
     expect(withSov).toBeGreaterThan(0);
+  });
+});
+
+describe('computeFreshnessAdjustedPersistence', () => {
+  const now = new Date('2026-04-21T00:00:00Z');
+  it('returns 0 for a creative first seen 180 days ago', () => {
+    expect(computeFreshnessAdjustedPersistence({
+      firstSeen: '2025-10-01',
+      durationDays: 180,
+    }, now)).toBe(0);
+  });
+  it('returns 0 for a creative running < 14 days (not yet proven)', () => {
+    expect(computeFreshnessAdjustedPersistence({
+      firstSeen: '2026-04-15',
+      durationDays: 6,
+    }, now)).toBe(0);
+  });
+  it('returns >=20 for an 18-day-old creative still running', () => {
+    const v = computeFreshnessAdjustedPersistence({
+      firstSeen: '2026-04-03',
+      durationDays: 18,
+    }, now);
+    expect(v).toBeGreaterThanOrEqual(20);
+    expect(v).toBeLessThanOrEqual(25);
+  });
+  it('returns 0 for an unparseable firstSeen', () => {
+    expect(computeFreshnessAdjustedPersistence({
+      firstSeen: 'not-a-date',
+      durationDays: 20,
+    }, now)).toBe(0);
   });
 });

@@ -86,3 +86,24 @@ export function computeImpressionMomentum(input: ImpressionMomentumInput): numbe
   }
   return 0;
 }
+
+/**
+ * Sub-score for "proven but still fresh" — a creative is rewarded for
+ * running ≥14 days but punished if its first appearance is older than 21
+ * days (then it's no longer "emerging"). The 0.5 + 0.5 * ratio curve peaks
+ * at 25 when first-seen age is low; at exactly 21 days since first seen,
+ * ratio is 0 and the score is 12.5.
+ */
+export function computeFreshnessAdjustedPersistence(
+  input: { firstSeen: string; durationDays: number },
+  now: Date = new Date(),
+): number {
+  const firstSeenTs = Date.parse(input.firstSeen);
+  if (!Number.isFinite(firstSeenTs)) return 0;
+  const ageDays = (now.getTime() - firstSeenTs) / 86400000;
+  if (ageDays > 21) return 0;
+  if (input.durationDays < 14) return 0;
+  const ratio = Math.max(0, (21 - ageDays) / 5);
+  const pts = 25 * (0.5 + 0.5 * Math.min(1, ratio));
+  return Math.min(25, Math.max(0, Math.round(pts * 10) / 10));
+}
