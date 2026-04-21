@@ -3,7 +3,7 @@ import type { SavedViewPayload, SavedViewVisibility } from '../types/savedView';
 
 const API_BASE = '/api';
 
-async function apiCall<T = any>(path: string, body: Record<string, any> = {}): Promise<T> {
+export async function apiCall<T = any>(path: string, body: Record<string, any> = {}): Promise<T> {
   const user = auth.currentUser;
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
