@@ -3,7 +3,9 @@ import { useGenres } from '../hooks/useGenres';
 import { useFetchLogs } from '../hooks/useFetchLogs';
 import { useFetchProgress } from '../hooks/useFetchProgress';
 import { useGenreDataStatus } from '../hooks/useGenreDataStatus';
+import { useCreativeWatchlist } from '../hooks/useCreativeWatchlist';
 import { api } from '../lib/api';
+import { addToWatchlist, removeFromWatchlist } from '../lib/creativesApi';
 import { fetchStore } from '../lib/fetchStore';
 import { formatMonth, formatWeek } from '../lib/dataProcessing';
 
@@ -74,6 +76,14 @@ export default function Settings() {
   const { genres, loading: genresLoading } = useGenres();
   const { logs, loading: logsLoading } = useFetchLogs(20);
   const { statusMap } = useGenreDataStatus(genres.map(g => g.id));
+  const { entries: watchlistEntries, loading: watchlistLoading } = useCreativeWatchlist();
+
+  const [watchlistInput, setWatchlistInput] = useState('');
+  const [watchlistAddError, setWatchlistAddError] = useState<string | null>(null);
+  const [watchlistAddSuccess, setWatchlistAddSuccess] = useState<string | null>(null);
+  const [watchlistAdding, setWatchlistAdding] = useState(false);
+  const [removingAppId, setRemovingAppId] = useState<string | null>(null);
+  const [watchlistRemoveError, setWatchlistRemoveError] = useState<string | null>(null);
 
   const [showAddForm, setShowAddForm] = useState(false);
   const [selectedPreset, setSelectedPreset] = useState('');
@@ -285,6 +295,38 @@ export default function Settings() {
       setSelectedFetchIds(new Set());
     } catch (error) {
       fetchStore.finish(`Fetch failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  };
+
+  const handleWatchlistAdd = async () => {
+    const appId = watchlistInput.trim();
+    setWatchlistAddError(null);
+    setWatchlistAddSuccess(null);
+    if (!appId) {
+      setWatchlistAddError('Enter a unified app id.');
+      return;
+    }
+    setWatchlistAdding(true);
+    try {
+      await addToWatchlist(appId);
+      setWatchlistInput('');
+      setWatchlistAddSuccess('Added to watchlist.');
+    } catch (e) {
+      setWatchlistAddError(e instanceof Error ? e.message : 'Could not add app.');
+    } finally {
+      setWatchlistAdding(false);
+    }
+  };
+
+  const handleWatchlistRemove = async (appId: string) => {
+    setWatchlistRemoveError(null);
+    setRemovingAppId(appId);
+    try {
+      await removeFromWatchlist(appId);
+    } catch (e) {
+      setWatchlistRemoveError(e instanceof Error ? e.message : 'Could not remove app.');
+    } finally {
+      setRemovingAppId(null);
     }
   };
 
@@ -611,6 +653,108 @@ export default function Settings() {
             </table>
           </div>
         )}
+      </section>
+
+      {/* Competitor Watchlist */}
+      <section className="mb-10">
+        <h2 className="text-[15px] font-semibold text-[#202124] mb-3">Competitor Watchlist</h2>
+        <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-[0_1px_2px_0_rgba(60,64,67,0.1)]">
+          <p className="text-[13px] text-[#5f6368] mb-4">
+            Apps in this list are always included in Creative Intelligence analysis, even if they&apos;re not in the weekly top-N.
+          </p>
+          <div className="mb-4">
+            {/* TODO(phase7): autocomplete picker that searches Sensor Tower unified IDs by app name/store URL; for now expects a bare unifiedAppId. */}
+            <label className="block text-[11px] font-semibold text-[#5f6368] uppercase tracking-wide mb-1.5">Add app by unified app id</label>
+            <div className="flex flex-wrap items-stretch gap-2">
+              <input
+                type="text"
+                value={watchlistInput}
+                onChange={(e) => {
+                  setWatchlistInput(e.target.value);
+                  setWatchlistAddError(null);
+                  setWatchlistAddSuccess(null);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    void handleWatchlistAdd();
+                  }
+                }}
+                placeholder="e.g. 5a12345b6c7d8e9f01234567 (unified app id)"
+                disabled={watchlistAdding}
+                className={`${inputClass} flex-1 min-w-[200px]`}
+              />
+              <button
+                type="button"
+                onClick={() => void handleWatchlistAdd()}
+                disabled={watchlistAdding}
+                className="px-4 py-2 bg-primary-600 text-white rounded-lg text-[13px] font-medium hover:bg-primary-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors shrink-0"
+              >
+                {watchlistAdding ? 'Adding…' : 'Add'}
+              </button>
+            </div>
+            {watchlistAddError && (
+              <p className="mt-2 text-[13px] text-[#c5221f]">{watchlistAddError}</p>
+            )}
+            {watchlistAddSuccess && !watchlistAddError && (
+              <p className="mt-2 text-[13px] text-[#137333]">{watchlistAddSuccess}</p>
+            )}
+          </div>
+
+          {watchlistRemoveError && (
+            <p className="text-[13px] text-[#c5221f] mb-3">{watchlistRemoveError}</p>
+          )}
+
+          {watchlistLoading ? (
+            <div className="space-y-2">{[1, 2].map((i) => (<div key={i} className="h-10 bg-[#f1f3f4] rounded animate-pulse" />))}</div>
+          ) : watchlistEntries.length === 0 ? (
+            <p className="text-[13px] text-[#5f6368]">No apps on the watchlist yet.</p>
+          ) : (
+            <div className="border border-[#e8eaed] rounded-lg overflow-hidden">
+              <table className="w-full text-left">
+                <thead>
+                  <tr className="border-b border-[#e8eaed] bg-[#f8f9fa]">
+                    <th className="px-3 py-2 text-[11px] font-semibold text-[#5f6368] uppercase tracking-wider w-12" />
+                    <th className="px-3 py-2 text-[11px] font-semibold text-[#5f6368] uppercase tracking-wider">App name</th>
+                    <th className="px-3 py-2 text-[11px] font-semibold text-[#5f6368] uppercase tracking-wider">Publisher</th>
+                    <th className="px-3 py-2 text-[11px] font-semibold text-[#5f6368] uppercase tracking-wider">App ID</th>
+                    <th className="px-3 py-2 text-[11px] font-semibold text-[#5f6368] uppercase tracking-wider w-24 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {watchlistEntries.map((row, i) => (
+                    <tr key={row.appId} className={i > 0 ? 'border-t border-[#f1f3f4]' : ''}>
+                      <td className="px-3 py-2 align-middle">
+                        {row.iconUrl ? (
+                          <img src={row.iconUrl} alt="" className="w-9 h-9 rounded-md object-cover border border-[#e8eaed]" />
+                        ) : (
+                          <div className="w-9 h-9 rounded-md bg-[#f1f3f4] border border-[#e8eaed]" />
+                        )}
+                      </td>
+                      <td className="px-3 py-2 text-[13px] text-[#202124] align-middle">{row.name}</td>
+                      <td className="px-3 py-2 text-[13px] text-[#3c4043] align-middle">{row.publisherName || '—'}</td>
+                      <td className="px-3 py-2 align-middle">
+                        <span className="font-mono text-[12px] text-[#3c4043] block max-w-[200px] truncate" title={row.appId}>
+                          {row.appId}
+                        </span>
+                      </td>
+                      <td className="px-3 py-2 text-right align-middle">
+                        <button
+                          type="button"
+                          onClick={() => void handleWatchlistRemove(row.appId)}
+                          disabled={removingAppId === row.appId}
+                          className="text-[12px] font-medium text-[#c5221f] hover:underline disabled:opacity-40 disabled:cursor-not-allowed"
+                        >
+                          {removingAppId === row.appId ? 'Removing…' : 'Remove'}
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
       </section>
     </div>
   );
