@@ -25,6 +25,38 @@
         { "fieldPath": "granularity", "order": "ASCENDING" },
         { "fieldPath": "generatedAt", "order": "DESCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "creativeLatest",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "genreId", "order": "ASCENDING" },
+        { "fieldPath": "durationDays", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "creativeLatest",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "genreId", "order": "ASCENDING" },
+        { "fieldPath": "firstSeen", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "creativeLatest",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "genreId", "order": "ASCENDING" },
+        { "fieldPath": "capturedWeek", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "scores",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "genreId", "order": "ASCENDING" },
+        { "fieldPath": "score", "order": "DESCENDING" }
+      ]
     }
   ],
   "fieldOverrides": []
