@@ -64,5 +64,34 @@ service cloud.firestore {
         allow write: if false;
       }
     }
+
+    match /creativeSnapshots/{snapshotId} {
+      allow read: if isUnityUser();
+      allow write: if false;
+
+      match /creatives/{docId} {
+        allow read: if isUnityUser();
+        allow write: if false;
+      }
+    }
+
+    match /creativeLatest/{docId} {
+      allow read: if isUnityUser();
+      allow write: if false;
+    }
+
+    match /creativeInsights/{docId} {
+      allow read: if isUnityUser();
+      allow write: if false;
+
+      match /scores/{scoreId} {
+        allow read: if isUnityUser();
+        allow write: if false;
+      }
+    }
+
+    match /watchlist/{docId} {
+      allow read, write: if isUnityUser();
+    }
   }
 }
