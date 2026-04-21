@@ -25,6 +25,11 @@ const BASE_URL = 'https://api.sensortower.com/v1';
 const APPS_LIMIT = 20;
 const NETWORKS_TO_TRY = ['Instagram', 'TikTok', 'Facebook'] as const;
 
+function redactTokenFromMessage(s: unknown): string {
+  const str = s instanceof Error ? s.message : typeof s === 'string' ? s : String(s ?? '');
+  return str.replace(/auth_token=[^&\s]+/g, 'auth_token=<REDACTED>');
+}
+
 async function main() {
   const token = process.env.SENSOR_TOWER_AUTH_TOKEN?.trim();
   if (!token) {
@@ -110,6 +115,9 @@ async function main() {
 }
 
 main().catch(err => {
-  console.error('Verification failed unexpectedly (network/runtime error, not an auth verdict):', err);
+  console.error(
+    'Verification failed unexpectedly (network/runtime error, not an auth verdict):',
+    redactTokenFromMessage(err)
+  );
   process.exit(3);
 });
