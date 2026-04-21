@@ -12,6 +12,7 @@ import {
   defaultFilters,
   type Filters,
 } from '../components/creatives/CreativeFilters';
+import { CreativeDetailModal } from '../components/creatives/CreativeDetailModal';
 import { useAppNames, type AppNameMapEntry } from '../hooks/useAppNames';
 import type { CreativeFormat, QueryableAdNetwork } from '../types/creatives';
 import type { JoinedCreative } from '../hooks/useCreativesForGenre';
@@ -116,6 +117,7 @@ export default function Creatives() {
   const [selectedGenreId, setSelectedGenreId] = useState<string>('');
   const [generating, setGenerating] = useState(false);
   const [filters, setFilters] = useState<Filters>(() => defaultFilters());
+  const [detailDocId, setDetailDocId] = useState<string | null>(null);
 
   const latestWeek = useMemo(() => getLatestCreativeWeek(), []);
 
@@ -186,6 +188,17 @@ export default function Creatives() {
     () => applyCreativeFilters(joinedCreatives, filters, appNames),
     [joinedCreatives, filters, appNames],
   );
+
+  const detailCreative = useMemo(
+    () => (detailDocId ? joinedCreatives.find((c) => c.docId === detailDocId) ?? null : null),
+    [joinedCreatives, detailDocId],
+  );
+
+  useEffect(() => {
+    if (detailDocId && !detailCreative) {
+      setDetailDocId(null);
+    }
+  }, [detailDocId, detailCreative]);
 
   const lastAnalyzed = useMemo(() => {
     const d = generatedAtToDate(insightDoc?.generatedAt);
@@ -283,11 +296,19 @@ export default function Creatives() {
               creatives={filteredCreatives}
               rankMap={rankMap}
               appNames={appNames}
-              onOpen={() => {}}
+              onOpen={setDetailDocId}
             />
           )}
         </>
       )}
+
+      <CreativeDetailModal
+        open={detailDocId != null}
+        onClose={() => setDetailDocId(null)}
+        creative={detailCreative}
+        insightDoc={insightDoc}
+        appEntry={detailCreative ? appNames.get(detailCreative.appId) : undefined}
+      />
     </div>
   );
 }
