@@ -155,6 +155,14 @@ function sortDocs(docs: StoredCreative[]): StoredCreative[] {
   });
 }
 
+/**
+ * Firestore document id for creative subcollections and `creativeLatest`.
+ * `creativeKey` (phashionGroup when present) is globally deduped and can match across apps for the same stock asset — include `appId` so doc ids do not collide.
+ */
+export function creativeDocId(appId: string, creativeKey: string): string {
+  return `${appId}__${creativeKey}`;
+}
+
 export async function fetchCreativesForGenreWithDeps(deps: FetchGenreDeps): Promise<FetchGenreResult> {
   const {
     genre,
@@ -311,8 +319,10 @@ export async function fetchCreativesForGenre(
         const chunk = docs.slice(i, i + BATCH);
         const batch = db.batch();
         for (const doc of chunk) {
-          batch.set(snapshotRef.collection('creatives').doc(doc.creativeKey), doc);
-          batch.set(db.collection('creativeLatest').doc(doc.creativeKey), doc);
+          // Same phashionGroup can appear for different apps (stock video); doc ids must not collide.
+          const docId = creativeDocId(doc.appId, doc.creativeKey);
+          batch.set(snapshotRef.collection('creatives').doc(docId), doc);
+          batch.set(db.collection('creativeLatest').doc(docId), doc);
         }
         await batch.commit();
       }

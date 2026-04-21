@@ -112,6 +112,37 @@ describe('fetchCreativesForGenreWithDeps', () => {
     expect(upsertAppNames.mock.calls[0][0]).toHaveLength(1);
   });
 
+  it('does not collapse same phashionGroup across different apps', async () => {
+    const resolveApps = vi.fn().mockResolvedValue(['app-1', 'app-2']);
+    const fetchCreatives = vi.fn().mockImplementation(async (p: { appId: string; network: QueryableAdNetwork }) => {
+      if (p.network !== 'Instagram') return [];
+      return [makeRaw({ appId: p.appId, phashionGroup: 'shared-stock' })];
+    });
+    const writeSnapshot = vi.fn().mockResolvedValue(undefined);
+    const upsertAppNames = vi.fn().mockResolvedValue(undefined);
+
+    const result = await fetchCreativesForGenreWithDeps({
+      genre: { id: 'g1', country: 'US' } as any,
+      weekStart: '2026-04-13',
+      weekEnd: '2026-04-19',
+      authToken: 'tok',
+      resolveApps,
+      fetchCreatives,
+      writeSnapshot,
+      upsertAppNames,
+      appMetadata: [
+        { appId: 'app-1', name: 'A1', publisherName: null, iosAppId: null, androidAppId: null },
+        { appId: 'app-2', name: 'A2', publisherName: null, iosAppId: null, androidAppId: null },
+      ],
+      watchlist: [],
+    });
+
+    expect(result.creativeCount).toBe(2);
+    const docs: StoredCreative[] = writeSnapshot.mock.calls[0][0];
+    expect(docs.map(d => d.appId).sort()).toEqual(['app-1', 'app-2']);
+    expect(new Set(docs.map(d => d.creativeKey))).toEqual(new Set(['shared-stock']));
+  });
+
   it('captures per-(app, network) errors in partialErrors without aborting', async () => {
     const resolveApps = vi.fn().mockResolvedValue(['app-1']);
     const fetchCreatives = vi.fn().mockImplementation(async (p: { network: QueryableAdNetwork }) => {
