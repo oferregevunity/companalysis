@@ -184,8 +184,31 @@ export async function fetchCreativesForGenreWithDeps(deps: FetchGenreDeps): Prom
   const apps = await resolveApps(genre.id, topN, watchlist);
   const merged = new Map<string, StoredCreative>();
 
+  // Build the full task list (app × network). Preserve original deterministic order
+  // by processing results in the same order they were scheduled.
+  const tasks: Array<{ appId: string; network: QueryableAdNetwork }> = [];
   for (const appId of apps) {
     for (const network of TRACKED_NETWORKS) {
+      tasks.push({ appId, network });
+    }
+  }
+
+  type TaskOutcome = { ok: true; raws: RawCreative[] } | { ok: false; err: string };
+
+  // Fan out to Sensor Tower with bounded concurrency. The previous implementation
+  // processed tasks strictly in series which easily exceeded the 540s function
+  // timeout (25 apps × 9 networks ≈ 225 calls). Parallelism=8 keeps us well
+  // under rate limits (client already retries on 429) while cutting wall time by
+  // nearly an order of magnitude.
+  const CONCURRENCY = 8;
+  const outcomes: TaskOutcome[] = new Array(tasks.length);
+  let nextIndex = 0;
+
+  async function worker(): Promise<void> {
+    while (true) {
+      const myIndex = nextIndex++;
+      if (myIndex >= tasks.length) return;
+      const { appId, network } = tasks[myIndex];
       try {
         const raws = await fetchCreatives({
           authToken,
@@ -195,19 +218,33 @@ export async function fetchCreativesForGenreWithDeps(deps: FetchGenreDeps): Prom
           startDate: weekStart,
           endDate: weekEnd,
         });
-        for (const raw of raws) {
-          const dedupKey = raw.phashionGroup ?? raw.id;
-          const mapKey = `${appId}::${dedupKey}`;
-          const existing = merged.get(mapKey);
-          if (!existing) {
-            merged.set(mapKey, rawToStored(raw, genre.id, capturedWeek));
-          } else {
-            merged.set(mapKey, mergeStored(existing, raw));
-          }
-        }
+        outcomes[myIndex] = { ok: true, raws };
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
-        partialErrors.push(`app=${appId} network=${network}: ${msg}`);
+        outcomes[myIndex] = { ok: false, err: msg };
+      }
+    }
+  }
+
+  await Promise.all(Array.from({ length: Math.min(CONCURRENCY, tasks.length) }, () => worker()));
+
+  // Reduce outcomes in scheduled order so merge behaviour matches the previous
+  // serial version (first-seen network "wins" for representative media, etc.).
+  for (let i = 0; i < tasks.length; i++) {
+    const { appId, network } = tasks[i];
+    const outcome = outcomes[i];
+    if (!outcome.ok) {
+      partialErrors.push(`app=${appId} network=${network}: ${outcome.err}`);
+      continue;
+    }
+    for (const raw of outcome.raws) {
+      const dedupKey = raw.phashionGroup ?? raw.id;
+      const mapKey = `${appId}::${dedupKey}`;
+      const existing = merged.get(mapKey);
+      if (!existing) {
+        merged.set(mapKey, rawToStored(raw, genre.id, capturedWeek));
+      } else {
+        merged.set(mapKey, mergeStored(existing, raw));
       }
     }
   }
