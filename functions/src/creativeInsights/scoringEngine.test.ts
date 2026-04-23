@@ -41,11 +41,11 @@ describe('computeNetworkBreadth', () => {
     expect(computeNetworkBreadth(['Facebook'])).toBeLessThanOrEqual(5);
   });
   it('caps at 25 for 7+ networks', () => {
-    const all: AdNetwork[] = ['Facebook', 'Instagram', 'TikTok', 'Applovin', 'Unity', 'Youtube', 'IronSource'];
+    const all: AdNetwork[] = ['Facebook', 'Instagram', 'TikTok', 'Applovin', 'Unity', 'Youtube', 'Supersonic'];
     expect(computeNetworkBreadth(all)).toBe(25);
   });
   it('saturates at the cap for >7 networks', () => {
-    const many: AdNetwork[] = ['Facebook', 'Instagram', 'TikTok', 'Applovin', 'Unity', 'Youtube', 'IronSource', 'Meta Audience Network', 'Admob'];
+    const many: AdNetwork[] = ['Facebook', 'Instagram', 'TikTok', 'Applovin', 'Unity', 'Youtube', 'Supersonic', 'Meta Audience Network', 'Admob'];
     expect(computeNetworkBreadth(many)).toBe(25);
   });
   it('deduplicates', () => {

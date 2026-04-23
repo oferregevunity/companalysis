@@ -13,8 +13,15 @@ const BASE_URL = 'https://api.sensortower.com/v1';
 const REQUEST_DELAY_MS = 300;
 const MAX_RETRIES = 3;
 
-/** All ad types the unified creatives endpoint supports. Required param. */
-const AD_TYPES_ALL = ['video', 'image', 'playable', 'html'] as const;
+/**
+ * Ad types accepted by `/unified/ad_intel/creatives`. The real API rejects
+ * `html` (422) and accepts: image, banner, full_screen, image-banner,
+ * image-interstitial, image-other, video, video-rewarded, video-interstitial,
+ * video-other, playable, interactive-playable, interactive-playable-rewarded,
+ * interactive-playable-other. Passing the three broad categories covers all
+ * creatives we care about.
+ */
+const AD_TYPES_ALL = ['video', 'image', 'playable'] as const;
 
 function sleep(ms: number): Promise<void> {
   return new Promise(r => setTimeout(r, ms));

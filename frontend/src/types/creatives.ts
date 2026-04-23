@@ -11,7 +11,7 @@ export type QueryableAdNetwork =
   | 'Unity'
   | 'Vungle'
   | 'Mintegral'
-  | 'IronSource'
+  | 'Supersonic'
   | 'Chartboost';
 
 /** Mirrors `functions/src/adIntel/types.ts`. */

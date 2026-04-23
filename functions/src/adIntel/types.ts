@@ -26,14 +26,16 @@ export type QueryableAdNetwork =
   | 'Unity'
   | 'Vungle'
   | 'Mintegral'
-  | 'IronSource'
+  | 'Supersonic'
   | 'Chartboost';
 
 /**
- * Networks we track for competitive intelligence. Subset of all observable
- * networks in Sensor Tower's SoV response (which also returns BidMachine,
- * Moloco, Digital Turbine, Smaato, Verve, Supersonic, InMobi, etc. — these
- * are aggregators/exchanges and not interesting for creative scraping).
+ * Networks we track for competitive intelligence. `Supersonic` is Sensor
+ * Tower's slug for ironSource's exchange — the API returns 422 for
+ * `IronSource`. Sensor Tower also supports Adcolony, BidMachine, Digital
+ * Turbine, InMobi, Line, Moloco, Mopub, Pangle, Pinterest, Smaato,
+ * Snapchat, Tapjoy, Twitter, Verve (aggregators/small networks) which we
+ * don't scrape for creatives.
  */
 export const TRACKED_NETWORKS: readonly QueryableAdNetwork[] = [
   'Instagram',
@@ -44,7 +46,7 @@ export const TRACKED_NETWORKS: readonly QueryableAdNetwork[] = [
   'Admob',
   'Applovin',
   'Unity',
-  'IronSource',
+  'Supersonic',
 ] as const;
 
 /** Any Sensor Tower network slug (including ones we don't scrape creatives for). */

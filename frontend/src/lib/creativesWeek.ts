@@ -30,10 +30,16 @@ export function mondayOfWeekContaining(d: Date): Date {
 }
 
 /**
- * Latest creative week key: ISO week for the Monday of the week containing "now" (UTC calendar).
+ * Latest creative week key: the most recently *completed* Mon–Sun week in UTC.
+ *
+ * We target the week containing (today − 7 days) so the week boundary is
+ * always in the past. Sensor Tower only indexes creatives for completed
+ * weeks; defaulting to the current in-progress week returned zero results.
  */
 export function getLatestCreativeWeek(): string {
-  const monday = mondayOfWeekContaining(new Date());
+  const now = new Date();
+  const lastWeekAnchor = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - 7));
+  const monday = mondayOfWeekContaining(lastWeekAnchor);
   return weekKeyFromStart(formatUtcYmd(monday));
 }
 
