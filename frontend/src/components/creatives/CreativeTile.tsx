@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import type { JoinedCreative } from '../../hooks/useCreativesForGenre';
 import type { CreativeFormat, QueryableAdNetwork } from '../../types/creatives';
 import type { AppNameMapEntry } from '../../hooks/useAppNames';
@@ -33,30 +34,44 @@ export function CreativeTile({ creative, rankBadge, appEntry, onOpen }: Creative
 
   const winnerGlow = rankBadge != null && rankBadge <= 10;
 
-  const media =
-    creative.format === 'video' && creative.mediaUrl ? (
-      <video
-        src={creative.mediaUrl}
-        muted
-        loop
-        playsInline
-        poster={creative.thumbnailUrl ?? undefined}
-        onMouseEnter={(e) => {
-          void e.currentTarget.play().catch(() => {});
-        }}
-        onMouseLeave={(e) => {
-          e.currentTarget.pause();
-          e.currentTarget.currentTime = 0;
-        }}
-        className="w-full aspect-square object-cover"
-      />
-    ) : (
+  // Chrome caps WebMediaPlayer instances per tab (~75). With thousands of
+  // creatives we can't mount a <video> per tile. Render the poster image
+  // by default and only swap to <video> while the tile is hovered, so at
+  // most a handful of players are alive at a time.
+  const [isHovering, setIsHovering] = useState(false);
+  const isVideo = creative.format === 'video' && !!creative.mediaUrl;
+  const poster = creative.thumbnailUrl ?? creative.mediaUrl ?? PLACEHOLDER_SVG;
+
+  const media = isVideo && isHovering ? (
+    <video
+      src={creative.mediaUrl!}
+      muted
+      loop
+      playsInline
+      autoPlay
+      preload="metadata"
+      poster={creative.thumbnailUrl ?? undefined}
+      className="w-full aspect-square object-cover"
+    />
+  ) : (
+    <div className="relative">
       <img
-        src={creative.thumbnailUrl ?? creative.mediaUrl ?? PLACEHOLDER_SVG}
+        src={poster}
         alt=""
+        loading="lazy"
         className="w-full aspect-square object-cover"
       />
-    );
+      {isVideo ? (
+        <span className="absolute inset-0 flex items-center justify-center pointer-events-none">
+          <span className="w-10 h-10 rounded-full bg-black/50 flex items-center justify-center">
+            <svg viewBox="0 0 24 24" className="w-5 h-5 fill-white" aria-hidden="true">
+              <path d="M8 5v14l11-7z" />
+            </svg>
+          </span>
+        </span>
+      ) : null}
+    </div>
+  );
 
   return (
     <div
@@ -73,6 +88,10 @@ export function CreativeTile({ creative, rankBadge, appEntry, onOpen }: Creative
           onOpen(creative.docId);
         }
       }}
+      onMouseEnter={() => isVideo && setIsHovering(true)}
+      onMouseLeave={() => isVideo && setIsHovering(false)}
+      onFocus={() => isVideo && setIsHovering(true)}
+      onBlur={() => isVideo && setIsHovering(false)}
     >
       <div className="relative">
         {rankBadge != null && (
