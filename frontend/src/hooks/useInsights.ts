@@ -48,6 +48,7 @@ export function useInsights(
               games: data.games || [],
               watchList: data.watchList || [],
               correlations: data.correlations || undefined,
+              newGameIdeas: data.newGameIdeas || undefined,
             });
           }
         }

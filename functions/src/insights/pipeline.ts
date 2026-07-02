@@ -1,7 +1,8 @@
 import { getFirestore, Timestamp } from 'firebase-admin/firestore';
 import { computeRisingStarScore } from './scoringEngine';
 import type { AppScoreInput, ScoredApp } from './scoringEngine';
-import { generateGenreInsights } from './geminiClient';
+import { generateGenreInsights, generateCrossGenreIdeas } from './geminiClient';
+import type { CrossGenreInput } from './geminiClient';
 import { fetchAppDescriptions } from './appDescriptions';
 
 function getDb() {
@@ -108,10 +109,17 @@ async function loadGenreAppData(
   return { apps, periods, storeIds };
 }
 
+export interface InsightsPipelineResult {
+  scored: number;
+  topApps: ScoredApp[];
+  /** Recurring themes/mechanics + top game names, for cross-genre synthesis. */
+  crossGenre?: CrossGenreInput;
+}
+
 export async function runInsightsPipeline(
   genre: GenreConfig,
   granularity: 'month' | 'week' = 'month'
-): Promise<{ scored: number; topApps: ScoredApp[] }> {
+): Promise<InsightsPipelineResult> {
   const { apps, periods, storeIds } = await loadGenreAppData(genre.id, granularity);
 
   if (apps.length === 0 || periods.length < 2) {
@@ -166,6 +174,7 @@ export async function runInsightsPipeline(
         ...app,
         reason: 'Score approaching top 5 threshold.',
       })),
+      newGameIdeas: [],
     };
   }
 
@@ -201,6 +210,9 @@ export async function runInsightsPipeline(
     games: enrichedGames,
     watchList: enrichedWatchList,
     ...(insight.correlations ? { correlations: insight.correlations } : {}),
+    ...(insight.newGameIdeas && insight.newGameIdeas.length > 0
+      ? { newGameIdeas: insight.newGameIdeas }
+      : {}),
   });
 
   // Store individual scores for all apps (for Dashboard AI Score column)
@@ -221,7 +233,16 @@ export async function runInsightsPipeline(
     await batch.commit();
   }
 
-  return { scored: allScored.length, topApps };
+  return {
+    scored: allScored.length,
+    topApps,
+    crossGenre: {
+      genreName: genre.name,
+      themes: insight.correlations?.themes || [],
+      mechanics: insight.correlations?.mechanics || [],
+      topGames: enrichedGames.map((g: any) => g.appName).filter(Boolean),
+    },
+  };
 }
 
 export async function runAllGenreInsights(
@@ -235,11 +256,13 @@ export async function runAllGenreInsights(
 
   const results: string[] = [];
   const errors: string[] = [];
+  const crossGenreInputs: CrossGenreInput[] = [];
 
   for (const genre of genres) {
     try {
-      const { scored } = await runInsightsPipeline(genre, granularity);
+      const { scored, crossGenre } = await runInsightsPipeline(genre, granularity);
       results.push(genre.name);
+      if (crossGenre) crossGenreInputs.push(crossGenre);
       console.log(`Insights generated for ${genre.name}: ${scored} apps scored`);
     } catch (err) {
       const msg = `Failed to generate insights for ${genre.name}: ${err}`;
@@ -248,5 +271,37 @@ export async function runAllGenreInsights(
     }
   }
 
+  // Cross-genre synthesis needs at least two genres to find recurring concepts.
+  if (crossGenreInputs.length >= 2) {
+    try {
+      await runCrossGenreInsights(crossGenreInputs, granularity);
+      console.log(`Cross-genre insights generated across ${crossGenreInputs.length} genres`);
+    } catch (err) {
+      const msg = `Failed to generate cross-genre insights: ${err}`;
+      errors.push(msg);
+      console.error(msg);
+    }
+  }
+
   return { genresProcessed: results, errors };
+}
+
+/**
+ * Synthesize concepts that recur ACROSS genres and ideate new games from them.
+ * Writes a single doc to crossGenreInsights/{granularity}.
+ */
+export async function runCrossGenreInsights(
+  inputs: CrossGenreInput[],
+  granularity: 'month' | 'week' = 'month'
+): Promise<void> {
+  const insight = await generateCrossGenreIdeas(inputs);
+
+  await getDb().collection('crossGenreInsights').doc(granularity).set({
+    granularity,
+    generatedAt: Timestamp.now(),
+    genresAnalyzed: inputs.map(i => i.genreName),
+    repeatedConcepts: insight.repeatedConcepts,
+    analysis: insight.analysis,
+    newGameIdeas: insight.newGameIdeas,
+  });
 }

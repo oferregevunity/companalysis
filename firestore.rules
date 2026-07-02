@@ -71,6 +71,12 @@ service cloud.firestore {
       }
     }
 
+    // Cross-genre synthesis (one doc per granularity). Written server-side.
+    match /crossGenreInsights/{docId} {
+      allow read: if isUnityUser();
+      allow write: if false;
+    }
+
     match /creativeSnapshots/{snapshotId} {
       allow read: if isUnityUser();
       allow write: if false;

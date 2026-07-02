@@ -5,8 +5,9 @@ import { useNavigate } from 'react-router-dom';
 import { db } from '../lib/firebase';
 import { generateInsights } from '../lib/api';
 import { useInsights } from '../hooks/useInsights';
+import { useCrossGenreInsights } from '../hooks/useCrossGenreInsights';
 import { formatCurrency, formatNumber, formatMonth, formatWeek } from '../lib/dataProcessing';
-import type { Genre, InsightGame, InsightWatchItem, GenreInsightDoc } from '../types';
+import type { Genre, InsightGame, InsightWatchItem, GenreInsightDoc, InsightGameIdea } from '../types';
 
 function ScoreBadge({ score }: { score: number }) {
   const color = score >= 60 ? 'bg-green-100 text-green-800'
@@ -198,6 +199,100 @@ function WatchList({ items }: { items: InsightWatchItem[] }) {
   );
 }
 
+function GameIdeaCard({ idea }: { idea: InsightGameIdea }) {
+  return (
+    <div className="border border-amber-200 bg-white rounded-lg p-3">
+      <div className="font-semibold text-sm text-gray-900">{idea.title}</div>
+      {idea.hook && <p className="text-sm text-gray-700 mt-1 italic">{idea.hook}</p>}
+      <dl className="mt-2 space-y-1 text-xs">
+        {idea.coreLoop && (
+          <div className="flex gap-1.5">
+            <dt className="font-medium text-amber-700 shrink-0">Core loop:</dt>
+            <dd className="text-gray-600">{idea.coreLoop}</dd>
+          </div>
+        )}
+        {idea.monetization && (
+          <div className="flex gap-1.5">
+            <dt className="font-medium text-amber-700 shrink-0">Monetization:</dt>
+            <dd className="text-gray-600">{idea.monetization}</dd>
+          </div>
+        )}
+      </dl>
+      {idea.inspiredBy.length > 0 && (
+        <div className="mt-2 flex flex-wrap items-center gap-1">
+          <span className="text-[11px] text-gray-400">Inspired by:</span>
+          {idea.inspiredBy.map((s, i) => (
+            <span key={i} className="inline-flex px-1.5 py-0.5 rounded text-[11px] bg-amber-100 text-amber-800">{s}</span>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function GameIdeasSection({ ideas, title }: { ideas: InsightGameIdea[]; title: string }) {
+  if (ideas.length === 0) return null;
+  return (
+    <div className="mt-4 bg-amber-50 border border-amber-100 rounded-lg p-4">
+      <h3 className="text-sm font-semibold text-amber-900 mb-3 flex items-center gap-1.5">
+        <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" d="M12 18v-5.25m0 0a6.01 6.01 0 0 0 1.5-.189m-1.5.189a6.01 6.01 0 0 1-1.5-.189m3.75 7.478a12.06 12.06 0 0 1-4.5 0m3.75 2.383a14.406 14.406 0 0 1-3 0M14.25 18v-.192c0-.983.658-1.823 1.508-2.316a7.5 7.5 0 1 0-7.517 0c.85.493 1.509 1.333 1.509 2.316V18" />
+        </svg>
+        {title}
+      </h3>
+      <div className="space-y-2">
+        {ideas.map((idea, i) => (
+          <GameIdeaCard key={i} idea={idea} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function CrossGenreInsightPanel({ granularity, refreshKey }: { granularity: 'month' | 'week'; refreshKey: number }) {
+  const { insight, loading } = useCrossGenreInsights(granularity, refreshKey);
+  if (loading || !insight) return null;
+  const hasContent =
+    insight.repeatedConcepts.length > 0 || insight.analysis || insight.newGameIdeas.length > 0;
+  if (!hasContent) return null;
+
+  return (
+    <div className="bg-gradient-to-br from-indigo-50 to-purple-50 rounded-xl border border-indigo-200 p-6">
+      <div className="flex items-center justify-between mb-3">
+        <h2 className="text-lg font-semibold text-indigo-900 flex items-center gap-2">
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M7.5 21L3 16.5m0 0L7.5 12M3 16.5h13.5m0-13.5L21 7.5m0 0L16.5 12M21 7.5H7.5" />
+          </svg>
+          Cross-Genre Concepts & Ideas
+        </h2>
+        {insight.genresAnalyzed.length > 0 && (
+          <span className="text-xs text-indigo-400">{insight.genresAnalyzed.length} genres</span>
+        )}
+      </div>
+
+      {insight.repeatedConcepts.length > 0 && (
+        <div className="mb-3 space-y-1.5">
+          {insight.repeatedConcepts.map((c, i) => (
+            <div key={i} className="flex flex-wrap items-center gap-1.5 text-sm">
+              <span className="font-medium text-indigo-900">{c.concept}</span>
+              <span className="text-indigo-300">·</span>
+              <div className="inline-flex flex-wrap gap-1">
+                {c.genres.map((g, j) => (
+                  <span key={j} className="inline-flex px-2 py-0.5 rounded-full text-xs bg-indigo-100 text-indigo-800">{g}</span>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {insight.analysis && <p className="text-sm text-indigo-900 mb-1">{insight.analysis}</p>}
+
+      <GameIdeasSection ideas={insight.newGameIdeas} title="New Game Ideas (cross-genre)" />
+    </div>
+  );
+}
+
 function GenreInsightCard({ insight, genreName, granularity }: { insight: GenreInsightDoc; genreName: string; granularity: 'month' | 'week' }) {
   const [expandedGame, setExpandedGame] = useState<string | null>(null);
 
@@ -265,6 +360,9 @@ function GenreInsightCard({ insight, genreName, granularity }: { insight: GenreI
           <p className="text-sm text-purple-900 mt-2">{insight.correlations.analysis}</p>
         </div>
       )}
+      {insight.newGameIdeas && insight.newGameIdeas.length > 0 && (
+        <GameIdeasSection ideas={insight.newGameIdeas} title={`New Game Ideas (from ${genreName})`} />
+      )}
     </div>
   );
 }
@@ -274,6 +372,7 @@ export default function Insights() {
   const [selectedGenres, setSelectedGenres] = useState<Genre[]>([]);
   const [generating, setGenerating] = useState(false);
   const [granularity, setGranularity] = useState<'month' | 'week'>('month');
+  const [crossRefreshKey, setCrossRefreshKey] = useState(0);
 
   const { insights, loading, error, refresh } = useInsights(selectedGenres, granularity);
 
@@ -291,6 +390,7 @@ export default function Insights() {
     try {
       await generateInsights(granularity);
       refresh();
+      setCrossRefreshKey(k => k + 1);
     } catch (err) {
       console.error('Failed to generate insights:', err);
     } finally {
@@ -350,6 +450,8 @@ export default function Insights() {
       </div>
 
       {error && <div className="bg-red-50 text-red-700 p-3 rounded-lg text-sm">{error}</div>}
+
+      <CrossGenreInsightPanel granularity={granularity} refreshKey={crossRefreshKey} />
 
       {loading ? (
         <div className="text-center py-12 text-gray-400">Loading insights...</div>
