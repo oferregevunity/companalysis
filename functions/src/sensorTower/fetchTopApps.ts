@@ -2,6 +2,7 @@ import * as admin from 'firebase-admin';
 import { getFirestore } from 'firebase-admin/firestore';
 import { fetchTopApps, resolveAppMetadata } from './client';
 import type { AppMetadata } from './client';
+import { rebuildGenreAggregate } from '../aggregates/genreAggregate';
 
 function getDb() {
   return getFirestore('companalysis');
@@ -93,6 +94,46 @@ async function cacheMetadata(metaMap: Map<string, AppMetadata>): Promise<void> {
  */
 export function getGenreMonths(genre: GenreDoc): { month: string; startDate: string; endDate: string }[] {
   return getLastNMonths(genre.monthsBack || 6);
+}
+
+export async function getMissingMonths(
+  genre: GenreDoc,
+): Promise<{ month: string; startDate: string; endDate: string }[]> {
+  const db = getDb();
+  const allMonths = getGenreMonths(genre);
+
+  const existingSnaps = await db
+    .collection('snapshots')
+    .where('genreId', '==', genre.id)
+    .get();
+
+  const existingMonthKeys = new Set(
+    existingSnaps.docs
+      .filter((d) => d.data().month != null)
+      .map((d) => d.data().month as string),
+  );
+
+  return allMonths.filter((m) => !existingMonthKeys.has(m.month));
+}
+
+export async function getMissingWeeks(
+  genre: GenreDoc,
+): Promise<{ week: string; startDate: string; endDate: string }[]> {
+  const db = getDb();
+  const allWeeks = getGenreWeeks(genre);
+
+  const existingSnaps = await db
+    .collection('snapshots')
+    .where('genreId', '==', genre.id)
+    .get();
+
+  const existingWeekKeys = new Set(
+    existingSnaps.docs
+      .filter((d) => d.data().week != null)
+      .map((d) => d.data().week as string),
+  );
+
+  return allWeeks.filter((w) => !existingWeekKeys.has(w.week));
 }
 
 /**
@@ -369,6 +410,14 @@ export async function fetchAndStoreGenre(
       monthsProcessed++;
     } else if (result.error) {
       errors.push(result.error);
+    }
+  }
+
+  if (monthsProcessed > 0) {
+    try {
+      await rebuildGenreAggregate(genre, 'month');
+    } catch (err) {
+      errors.push(`Aggregate rebuild failed for ${genre.name}: ${err}`);
     }
   }
 

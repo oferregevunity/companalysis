@@ -60,6 +60,10 @@ export interface FetchLog {
   status: 'running' | 'completed' | 'failed';
   genresProcessed: string[];
   errors: string[];
+  /** Same calendar week for the split Monday jobs (`weeklyFetchApps` + `weeklyFetchCreatives`). */
+  scheduleRunId?: string;
+  appsPhase?: 'running' | 'completed' | 'failed' | 'skipped';
+  creativesPhase?: 'running' | 'completed' | 'failed' | 'skipped' | 'pending';
 }
 
 export interface SubScores {

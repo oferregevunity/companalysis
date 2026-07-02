@@ -189,8 +189,11 @@ export default function Dashboard() {
   const [sorting, setSorting] = useState<SortingState>([]);
   const [globalFilter, setGlobalFilter] = useState('');
   const [sortMetric, setSortMetric] = useState<SortMetric>('value');
-  const [selectedRising, setSelectedRising] = useState<Set<RisingStatus>>(new Set());
-  const [risingDropdownOpen, setRisingDropdownOpen] = useState(false);
+  const [selectedRisingRev, setSelectedRisingRev] = useState<Set<RisingStatus>>(new Set());
+  const [selectedRisingDl, setSelectedRisingDl] = useState<Set<RisingStatus>>(new Set());
+  /** Legacy `?r=` / old presets: one set matches revenue OR downloads column. */
+  const [risingMatchAny, setRisingMatchAny] = useState(false);
+  const [risingMenuOpen, setRisingMenuOpen] = useState<null | 'rev' | 'dl'>(null);
   const [risingThreshold, setRisingThreshold] = useState(20);
   const [showFavoritesOnly, setShowFavoritesOnly] = useState(false);
   const [dateFrom, setDateFrom] = useState<string>('');
@@ -222,7 +225,9 @@ export default function Dashboard() {
         setSorting,
         setGlobalFilter,
         setSortMetric,
-        setSelectedRising,
+        setSelectedRisingRev,
+        setSelectedRisingDl,
+        setRisingMatchAny,
         setRisingThreshold,
         setShowFavoritesOnly,
         setDateFrom,
@@ -241,7 +246,9 @@ export default function Dashboard() {
       sorting,
       globalFilter,
       sortMetric,
-      rising: [...selectedRising],
+      risingRev: [...selectedRisingRev],
+      risingDl: [...selectedRisingDl],
+      ...(risingMatchAny ? { risingMatchAny: true } : {}),
       risingThreshold,
       favoritesOnly: showFavoritesOnly,
       dateFrom,
@@ -255,7 +262,9 @@ export default function Dashboard() {
     sorting,
     globalFilter,
     sortMetric,
-    selectedRising,
+    selectedRisingRev,
+    selectedRisingDl,
+    risingMatchAny,
     risingThreshold,
     showFavoritesOnly,
     dateFrom,
@@ -368,11 +377,20 @@ export default function Dashboard() {
     if (showFavoritesOnly) {
       rows = rows.filter(r => favorites.has(r.appId));
     }
-    if (selectedRising.size > 0) {
-      rows = rows.filter(r => selectedRising.has(r.risingStatus) || selectedRising.has(r.risingStatusDownloads));
+    if (risingMatchAny && selectedRisingRev.size > 0) {
+      rows = rows.filter(
+        (r) => selectedRisingRev.has(r.risingStatus) || selectedRisingRev.has(r.risingStatusDownloads)
+      );
+    } else {
+      if (selectedRisingRev.size > 0) {
+        rows = rows.filter((r) => selectedRisingRev.has(r.risingStatus));
+      }
+      if (selectedRisingDl.size > 0) {
+        rows = rows.filter((r) => selectedRisingDl.has(r.risingStatusDownloads));
+      }
     }
     return rows;
-  }, [data, showFavoritesOnly, favorites, selectedRising]);
+  }, [data, showFavoritesOnly, favorites, selectedRisingRev, selectedRisingDl, risingMatchAny]);
 
   const genreColorMap = useMemo(() => {
     const map = new Map<string, typeof GENRE_COLORS[0]>();
@@ -838,28 +856,126 @@ export default function Dashboard() {
           </div>
 
           <div className="relative">
-            <button type="button" onClick={() => setRisingDropdownOpen(o => !o)}
-              className="text-[12px] border border-[#dadce0] rounded-lg px-2.5 py-[5px] bg-white text-[#3c4043] focus:outline-none focus:border-primary-500 min-w-[120px] text-left flex items-center justify-between gap-1">
-              <span>Rising: {selectedRising.size === 0 ? 'All' : `${selectedRising.size} selected`}</span>
-              <svg className={`w-3.5 h-3.5 transition-transform ${risingDropdownOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+            <button
+              type="button"
+              onClick={() => setRisingMenuOpen((o) => (o === 'rev' ? null : 'rev'))}
+              className="text-[12px] border border-[#dadce0] rounded-lg px-2.5 py-[5px] bg-white text-[#3c4043] focus:outline-none focus:border-primary-500 min-w-[128px] text-left flex items-center justify-between gap-1"
+            >
+              <span
+                title={
+                  risingMatchAny && selectedRisingRev.size > 0
+                    ? 'Levels match revenue or downloads (legacy shared link). Use Rising (DL) to switch to separate filters.'
+                    : undefined
+                }
+              >
+                Rising (Rev):{' '}
+                {risingMatchAny && selectedRisingRev.size > 0
+                  ? `${selectedRisingRev.size} (OR)`
+                  : selectedRisingRev.size === 0
+                    ? 'All'
+                    : `${selectedRisingRev.size} selected`}
+              </span>
+              <svg
+                className={`w-3.5 h-3.5 transition-transform ${risingMenuOpen === 'rev' ? 'rotate-180' : ''}`}
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
             </button>
-            {risingDropdownOpen && (
+            {risingMenuOpen === 'rev' && (
               <>
-                <div className="fixed inset-0 z-10" onClick={() => setRisingDropdownOpen(false)} aria-hidden />
-                <div className="absolute left-0 top-full mt-1 z-20 bg-white border border-[#dadce0] rounded-lg shadow-lg py-1 min-w-[140px]">
-                  <button type="button" onClick={() => { setSelectedRising(new Set()); setRisingDropdownOpen(false); }}
-                    className="w-full px-3 py-1.5 text-left text-[12px] hover:bg-[#f8f9fa]">
+                <div className="fixed inset-0 z-10" onClick={() => setRisingMenuOpen(null)} aria-hidden />
+                <div className="absolute left-0 top-full mt-1 z-20 bg-white border border-[#dadce0] rounded-lg shadow-lg py-1 min-w-[160px]">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedRisingRev(new Set());
+                      setRisingMatchAny(false);
+                      setRisingMenuOpen(null);
+                    }}
+                    className="w-full px-3 py-1.5 text-left text-[12px] hover:bg-[#f8f9fa]"
+                  >
                     All
                   </button>
                   {RISING_OPTIONS.map((opt) => (
                     <label key={opt} className="flex items-center gap-2 px-3 py-1.5 hover:bg-[#f8f9fa] cursor-pointer">
-                      <input type="checkbox" checked={selectedRising.has(opt)} onChange={(e) => {
-                        setSelectedRising(prev => {
-                          const next = new Set(prev);
-                          if (e.target.checked) next.add(opt); else next.delete(opt);
-                          return next;
-                        });
-                      }} className="rounded border-[#dadce0]" />
+                      <input
+                        type="checkbox"
+                        checked={selectedRisingRev.has(opt)}
+                        onChange={(e) => {
+                          setRisingMatchAny(false);
+                          setSelectedRisingRev((prev) => {
+                            const next = new Set(prev);
+                            if (e.target.checked) next.add(opt);
+                            else next.delete(opt);
+                            return next;
+                          });
+                        }}
+                        className="rounded border-[#dadce0]"
+                      />
+                      <span className="text-[12px]">{opt === 'NOT' ? 'Not rising' : opt}</span>
+                    </label>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setRisingMenuOpen((o) => (o === 'dl' ? null : 'dl'))}
+              className="text-[12px] border border-[#dadce0] rounded-lg px-2.5 py-[5px] bg-white text-[#3c4043] focus:outline-none focus:border-primary-500 min-w-[128px] text-left flex items-center justify-between gap-1"
+            >
+              <span title={risingMatchAny && selectedRisingRev.size > 0 ? 'Adjust downloads filter here to use separate Rev/DL filters.' : undefined}>
+                Rising (DL):{' '}
+                {risingMatchAny && selectedRisingRev.size > 0
+                  ? 'All'
+                  : selectedRisingDl.size === 0
+                    ? 'All'
+                    : `${selectedRisingDl.size} selected`}
+              </span>
+              <svg
+                className={`w-3.5 h-3.5 transition-transform ${risingMenuOpen === 'dl' ? 'rotate-180' : ''}`}
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
+            </button>
+            {risingMenuOpen === 'dl' && (
+              <>
+                <div className="fixed inset-0 z-10" onClick={() => setRisingMenuOpen(null)} aria-hidden />
+                <div className="absolute left-0 top-full mt-1 z-20 bg-white border border-[#dadce0] rounded-lg shadow-lg py-1 min-w-[160px]">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedRisingDl(new Set());
+                      setRisingMenuOpen(null);
+                    }}
+                    className="w-full px-3 py-1.5 text-left text-[12px] hover:bg-[#f8f9fa]"
+                  >
+                    All
+                  </button>
+                  {RISING_OPTIONS.map((opt) => (
+                    <label key={`dl-${opt}`} className="flex items-center gap-2 px-3 py-1.5 hover:bg-[#f8f9fa] cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={selectedRisingDl.has(opt)}
+                        onChange={(e) => {
+                          setRisingMatchAny(false);
+                          setSelectedRisingDl((prev) => {
+                            const next = new Set(prev);
+                            if (e.target.checked) next.add(opt);
+                            else next.delete(opt);
+                            return next;
+                          });
+                        }}
+                        className="rounded border-[#dadce0] disabled:opacity-40"
+                      />
                       <span className="text-[12px]">{opt === 'NOT' ? 'Not rising' : opt}</span>
                     </label>
                   ))}

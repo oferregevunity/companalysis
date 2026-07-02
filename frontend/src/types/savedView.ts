@@ -3,7 +3,17 @@ export type SavedViewPayload = {
   sorting: { id: string; desc: boolean }[];
   globalFilter: string;
   sortMetric: 'value' | 'percent';
-  rising: string[];
+  /** Rising (revenue) levels to keep; empty = no filter on this axis. */
+  risingRev: string[];
+  /** Rising (downloads) levels to keep; empty = no filter on this axis. */
+  risingDl: string[];
+  /**
+   * When true, a single selection set in `risingRev` matches a row if **either** revenue or
+   * downloads rising status is in the set (legacy `?r=` / old saved views). Otherwise filters are ANDed.
+   */
+  risingMatchAny?: boolean;
+  /** @deprecated Preset payloads may still include this; clients normalize to risingRev / risingMatchAny. */
+  rising?: string[];
   risingThreshold: number;
   favoritesOnly: boolean;
   dateFrom: string;
@@ -18,7 +28,8 @@ export const DEFAULT_PAYLOAD: SavedViewPayload = {
   sorting: [],
   globalFilter: '',
   sortMetric: 'value',
-  rising: [],
+  risingRev: [],
+  risingDl: [],
   risingThreshold: 20,
   favoritesOnly: false,
   dateFrom: '',

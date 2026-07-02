@@ -5,6 +5,7 @@ import { sensorTowerAuthToken } from './sensorTower/client';
 import { fetchAndStoreGenre, fetchAndStoreMonth, getGenreMonths, getGenreWeeks, fetchAndStoreWeek } from './sensorTower/fetchTopApps';
 import { createSavedView, inviteToSavedView } from './api/savedViews';
 import { runAllGenreInsights, runInsightsPipeline } from './insights/pipeline';
+import { rebuildGenreAggregate, deleteGenreAggregates } from './aggregates/genreAggregate';
 
 admin.initializeApp();
 
@@ -131,6 +132,9 @@ export const compAnalysisApi = onRequest(
             await batch.commit();
           }
 
+          // Delete the aggregate read-model docs
+          await deleteGenreAggregates(id, db);
+
           // Delete the genre document itself
           await db.collection('genres').doc(id).delete();
           console.log(`Deleted genre ${id}: ${snapsDeleted} snapshots, ${genreComments.size} comments`);
@@ -191,6 +195,13 @@ export const compAnalysisApi = onRequest(
             { month: fetchMonth, startDate: fetchStart, endDate: fetchEnd },
             authTokenMonth
           );
+          if (result.success) {
+            try {
+              await rebuildGenreAggregate(genre, 'month', db);
+            } catch (err) {
+              console.error('Aggregate (month) rebuild failed:', err);
+            }
+          }
           sendSuccess(res, result);
           // Fire-and-forget: generate insights after fetch
           runInsightsPipeline({ id: fetchGenreId, name: genre.name }, 'month')
@@ -247,6 +258,13 @@ export const compAnalysisApi = onRequest(
             { week: fetchWeek, startDate: weekStart, endDate: weekEnd },
             weekAuthToken
           );
+          if (weekResult.success) {
+            try {
+              await rebuildGenreAggregate(weekGenre, 'week', db);
+            } catch (err) {
+              console.error('Aggregate (week) rebuild failed:', err);
+            }
+          }
           sendSuccess(res, weekResult);
           // Fire-and-forget: generate insights after fetch
           runInsightsPipeline({ id: weekGenreId, name: weekGenre.name }, 'week')
@@ -330,6 +348,8 @@ export const compAnalysisApi = onRequest(
             comments.docs.forEach(doc => batch.delete(doc.ref));
             await batch.commit();
           }
+
+          await deleteGenreAggregates(deleteGenreId, db);
 
           sendSuccess(res, { success: true, snapshotsDeleted: deleted });
           return;
@@ -464,4 +484,4 @@ export const compAnalysisApi = onRequest(
   }
 );
 
-export { weeklyFetch } from './scheduled/weeklyFetch';
+export { weeklyFetchApps, weeklyFetchCreatives, weeklyFetchCreativesFallback } from './scheduled/weeklyFetch';

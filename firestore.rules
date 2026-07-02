@@ -23,6 +23,12 @@ service cloud.firestore {
       }
     }
 
+    // Pre-pivoted dashboard read model. Written server-side (admin SDK bypasses rules).
+    match /genreAggregates/{aggId} {
+      allow read: if isUnityUser();
+      allow write: if false;
+    }
+
     match /fetchLogs/{logId} {
       allow read: if isUnityUser();
       allow write: if false;

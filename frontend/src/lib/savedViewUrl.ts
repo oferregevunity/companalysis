@@ -49,8 +49,15 @@ export function payloadToQueryString(payload: SavedViewPayload): string {
   if (payload.sortMetric !== d.sortMetric) {
     params.set('sm', payload.sortMetric);
   }
-  if (payload.rising.length > 0 && !arraysEqual(payload.rising, d.rising)) {
-    params.set('r', payload.rising.join(','));
+  if (payload.risingMatchAny && payload.risingRev.length > 0) {
+    params.set('r', payload.risingRev.join(','));
+  } else {
+    if (payload.risingRev.length > 0 && !arraysEqual(payload.risingRev, d.risingRev)) {
+      params.set('rr', payload.risingRev.join(','));
+    }
+    if (payload.risingDl.length > 0 && !arraysEqual(payload.risingDl, d.risingDl)) {
+      params.set('rd', payload.risingDl.join(','));
+    }
   }
   if (payload.risingThreshold !== d.risingThreshold) {
     params.set('rt', String(payload.risingThreshold));
@@ -101,9 +108,21 @@ export function queryStringToPayload(search: string): SavedViewPayload {
   const sm = params.get('sm');
   if (sm === 'value' || sm === 'percent') out.sortMetric = sm;
 
+  const rr = params.get('rr');
+  const rd = params.get('rd');
   const r = params.get('r');
-  if (r) {
-    out.rising = r.split(',').map((x) => x.trim()).filter(Boolean);
+  if (r && !rr && !rd) {
+    out.risingRev = r.split(',').map((x) => x.trim()).filter(Boolean);
+    out.risingDl = [];
+    out.risingMatchAny = true;
+  } else {
+    if (rr) {
+      out.risingRev = rr.split(',').map((x) => x.trim()).filter(Boolean);
+    }
+    if (rd) {
+      out.risingDl = rd.split(',').map((x) => x.trim()).filter(Boolean);
+    }
+    out.risingMatchAny = false;
   }
 
   const rt = params.get('rt');

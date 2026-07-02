@@ -6,7 +6,11 @@ export type SavedViewPayload = {
   sorting: { id: string; desc: boolean }[];
   globalFilter: string;
   sortMetric: 'value' | 'percent';
-  rising: string[];
+  risingRev: string[];
+  risingDl: string[];
+  risingMatchAny?: boolean;
+  /** @deprecated Old presets */
+  rising?: string[];
   risingThreshold: number;
   favoritesOnly: boolean;
   dateFrom: string;
@@ -40,7 +44,30 @@ export function parseSavedViewPayload(raw: unknown): SavedViewPayload | null {
   }
   if (typeof p.globalFilter !== 'string') return null;
   if (!isSortMetric(p.sortMetric)) return null;
-  if (!Array.isArray(p.rising) || !p.rising.every((r) => typeof r === 'string')) return null;
+
+  let risingRev: string[];
+  let risingDl: string[];
+  let risingMatchAny: boolean | undefined;
+  if ('risingRev' in p || 'risingDl' in p) {
+    if (!Array.isArray(p.risingRev) || !p.risingRev.every((r) => typeof r === 'string')) return null;
+    if (!Array.isArray(p.risingDl) || !p.risingDl.every((r) => typeof r === 'string')) return null;
+    risingRev = p.risingRev as string[];
+    risingDl = p.risingDl as string[];
+    risingMatchAny = p.risingMatchAny === true ? true : undefined;
+  } else if (Array.isArray(p.rising)) {
+    if (!p.rising.every((r) => typeof r === 'string')) return null;
+    if (p.rising.length > 0) {
+      risingRev = [...(p.rising as string[])];
+      risingDl = [];
+      risingMatchAny = true;
+    } else {
+      risingRev = [];
+      risingDl = [];
+    }
+  } else {
+    return null;
+  }
+
   if (typeof p.risingThreshold !== 'number' || Number.isNaN(p.risingThreshold)) return null;
   if (typeof p.favoritesOnly !== 'boolean') return null;
   if (typeof p.dateFrom !== 'string' || typeof p.dateTo !== 'string') return null;
@@ -53,7 +80,9 @@ export function parseSavedViewPayload(raw: unknown): SavedViewPayload | null {
     sorting: p.sorting as { id: string; desc: boolean }[],
     globalFilter: p.globalFilter,
     sortMetric: p.sortMetric,
-    rising: p.rising as string[],
+    risingRev,
+    risingDl,
+    ...(risingMatchAny ? { risingMatchAny: true } : {}),
     risingThreshold: p.risingThreshold,
     favoritesOnly: p.favoritesOnly,
     dateFrom: p.dateFrom,

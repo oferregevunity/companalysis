@@ -10,7 +10,7 @@ export function hasUrlViewState(search: string): boolean {
   if (getPresetIdFromSearch(search)) return true;
   const s = search.startsWith('?') ? search.slice(1) : search;
   const params = new URLSearchParams(s);
-  const keys = ['g', 's', 'q', 'sm', 'r', 'rt', 'fo', 'from', 'to', 'gr', 'mv', 'ps'];
+  const keys = ['g', 's', 'q', 'sm', 'r', 'rr', 'rd', 'rt', 'fo', 'from', 'to', 'gr', 'mv', 'ps'];
   return keys.some((k) => params.has(k));
 }
 
@@ -22,7 +22,9 @@ export function applySavedViewPayload(
     setSorting: (s: SortingState) => void;
     setGlobalFilter: (s: string) => void;
     setSortMetric: (m: 'value' | 'percent') => void;
-    setSelectedRising: (s: Set<RisingStatus>) => void;
+    setSelectedRisingRev: (s: Set<RisingStatus>) => void;
+    setSelectedRisingDl: (s: Set<RisingStatus>) => void;
+    setRisingMatchAny: (v: boolean) => void;
     setRisingThreshold: (n: number) => void;
     setShowFavoritesOnly: (v: boolean) => void;
     setDateFrom: (v: string) => void;
@@ -42,8 +44,38 @@ export function applySavedViewPayload(
   setters.setSorting(payload.sorting);
   setters.setGlobalFilter(payload.globalFilter);
   setters.setSortMetric(payload.sortMetric);
-  const rising = payload.rising.filter((r): r is RisingStatus => RISING_SET.has(r as RisingStatus));
-  setters.setSelectedRising(new Set(rising));
+
+  const raw = payload as unknown as Record<string, unknown>;
+  let revList: string[];
+  let dlList: string[];
+  let matchAny: boolean;
+
+  if ('risingRev' in raw || 'risingDl' in raw) {
+    revList = Array.isArray(raw.risingRev) ? (raw.risingRev as string[]) : [];
+    dlList = Array.isArray(raw.risingDl) ? (raw.risingDl as string[]) : [];
+    matchAny = raw.risingMatchAny === true;
+  } else if (Array.isArray(raw.rising)) {
+    const rising = raw.rising as string[];
+    if (rising.length > 0) {
+      revList = [...rising];
+      dlList = [];
+      matchAny = true;
+    } else {
+      revList = [];
+      dlList = [];
+      matchAny = false;
+    }
+  } else {
+    revList = [];
+    dlList = [];
+    matchAny = false;
+  }
+
+  const rev = revList.filter((r): r is RisingStatus => RISING_SET.has(r as RisingStatus));
+  const dl = dlList.filter((r): r is RisingStatus => RISING_SET.has(r as RisingStatus));
+  setters.setSelectedRisingRev(new Set(rev));
+  setters.setSelectedRisingDl(new Set(dl));
+  setters.setRisingMatchAny(matchAny);
   setters.setRisingThreshold(payload.risingThreshold);
   setters.setShowFavoritesOnly(payload.favoritesOnly);
   setters.setGranularity(payload.granularity);

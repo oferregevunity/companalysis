@@ -26,25 +26,29 @@ export function useAppScores(
     setLoading(true);
 
     (async () => {
+      // Fetch every genre's latest insight + scores in parallel rather than
+      // awaiting one genre at a time.
+      const perGenreScores = await Promise.all(
+        selectedGenres.map(async (genre) => {
+          const q = query(
+            collection(db, 'insights'),
+            where('genreId', '==', genre.id),
+            where('granularity', '==', granularity),
+            orderBy('generatedAt', 'desc'),
+            limit(1)
+          );
+
+          const insightSnap = await getDocs(q);
+          if (insightSnap.empty) return [];
+
+          const scoresSnap = await getDocs(collection(insightSnap.docs[0].ref, 'scores'));
+          return scoresSnap.docs.map((d) => d.data());
+        })
+      );
+
       const map = new Map<string, AppScore>();
-
-      for (const genre of selectedGenres) {
-        const q = query(
-          collection(db, 'insights'),
-          where('genreId', '==', genre.id),
-          where('granularity', '==', granularity),
-          orderBy('generatedAt', 'desc'),
-          limit(1)
-        );
-
-        const insightSnap = await getDocs(q);
-        if (insightSnap.empty) continue;
-
-        const insightDoc = insightSnap.docs[0];
-        const scoresSnap = await getDocs(collection(insightDoc.ref, 'scores'));
-
-        for (const scoreDoc of scoresSnap.docs) {
-          const data = scoreDoc.data();
+      for (const scores of perGenreScores) {
+        for (const data of scores) {
           const existing = map.get(data.appId);
           if (!existing || data.score > existing.score) {
             map.set(data.appId, {

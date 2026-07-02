@@ -1,8 +1,19 @@
-import { useState, useEffect, useMemo } from 'react';
-import { collection, getDocs, query, where, orderBy } from 'firebase/firestore';
+import { useState, useEffect, useMemo, useRef } from 'react';
+import { collection, doc, getDoc, getDocs, query, where, orderBy } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { buildComparisonData, computeRisingStatus } from '../lib/dataProcessing';
 import type { Genre, AppData, ComparisonRow } from '../types';
+
+/** Raw per-genre fetch result, before pivot/merge. */
+type GenreRaw = { months: string[]; appsByMonth: Record<string, AppData[]> };
+
+/**
+ * Session cache of raw per-genre data, keyed by `${genreId}|${granularity}`.
+ * Snapshot data only changes on the weekly fetch, so once a genre is loaded
+ * we can reuse it when the user toggles it off and back on — no refetch, and
+ * no re-reading the apps subcollections. `refresh()` bypasses and overwrites it.
+ */
+const genreRawCache = new Map<string, GenreRaw>();
 
 function computePercentChanges(
   values: Record<string, number>,
@@ -33,6 +44,7 @@ export function useMultiGenreSnapshots(selectedGenres: Genre[], risingThreshold:
     months: string[];
   }>({ rows: [], months: [] });
   const [refreshCounter, setRefreshCounter] = useState(0);
+  const forceRefreshRef = useRef(false);
 
   const genreKey = selectedGenres.map(g => g.id).sort().join(',');
 
@@ -45,6 +57,108 @@ export function useMultiGenreSnapshots(selectedGenres: Genre[], risingThreshold:
 
     let cancelled = false;
 
+    const force = forceRefreshRef.current;
+    forceRefreshRef.current = false;
+
+    /** Fast path: read the pre-pivoted aggregate doc (1 read) and expand it
+     * back into the appsByMonth shape buildComparisonData expects. Returns null
+     * if the aggregate is missing/empty so the caller falls back to the fan-out. */
+    async function fetchGenreFromAggregate(genre: Genre): Promise<GenreRaw | null> {
+      const aggRef = doc(db, 'genreAggregates', `${genre.id}_${granularity}`);
+      const aggSnap = await getDoc(aggRef);
+      if (!aggSnap.exists()) return null;
+
+      const data = aggSnap.data() as {
+        months?: string[];
+        // Bulk columns packed into one JSON string (avoids Firestore's array
+        // index-entry limit). rev/dl are flat row-major: index [i * months.length + p].
+        payload?: string;
+      };
+      const months = data.months ?? [];
+      if (months.length === 0 || !data.payload) return null;
+
+      let cols: {
+        ids?: string[];
+        names?: string[];
+        publishers?: string[];
+        ios?: (string | null)[];
+        android?: (string | null)[];
+        rev?: number[];
+        dl?: number[];
+      };
+      try {
+        cols = JSON.parse(data.payload);
+      } catch {
+        return null;
+      }
+      const ids = cols.ids ?? [];
+      if (ids.length === 0) return null;
+
+      const { names = [], publishers = [], ios = [], android = [], rev = [], dl = [] } = cols;
+      const P = months.length;
+      const appsByMonth: Record<string, AppData[]> = {};
+      for (const m of months) appsByMonth[m] = [];
+      for (let i = 0; i < ids.length; i++) {
+        const base = i * P;
+        for (let p = 0; p < P; p++) {
+          appsByMonth[months[p]].push({
+            unifiedAppId: ids[i],
+            unifiedAppName: names[i] ?? ids[i],
+            publisherName: publishers[i] ?? '',
+            iosAppId: ios[i] ?? null,
+            androidAppId: android[i] ?? null,
+            downloads: dl[base + p] ?? 0,
+            storeRevenue: rev[base + p] ?? 0,
+          });
+        }
+      }
+      return { months, appsByMonth };
+    }
+
+    async function fetchGenreRaw(genre: Genre): Promise<GenreRaw> {
+      // Prefer the denormalized read model — one doc read instead of fanning
+      // out across every month's apps subcollection. Falls back automatically
+      // if the aggregate hasn't been built for this genre yet.
+      try {
+        const agg = await fetchGenreFromAggregate(genre);
+        if (agg) return agg;
+      } catch {
+        // Aggregate unavailable — fall through to the per-snapshot fan-out.
+      }
+
+      const timeField = granularity === 'week' ? 'week' : 'month';
+      const constraints = [
+        where('genreId', '==', genre.id),
+        orderBy(timeField, 'asc'),
+      ];
+      if (granularity === 'week') {
+        constraints.splice(1, 0, where('granularity', '==', 'week'));
+      }
+      const snapshotsQuery = query(collection(db, 'snapshots'), ...constraints);
+      const snapshotsSnapshot = await getDocs(snapshotsQuery);
+      const snaps = snapshotsSnapshot.docs.map((d) => ({
+        id: d.id,
+        month: (d.data()[timeField] as string),
+      }));
+
+      const monthResults = await Promise.all(
+        snaps.map(async (snap) => {
+          const appsSnapshot = await getDocs(collection(db, 'snapshots', snap.id, 'apps'));
+          return {
+            month: snap.month,
+            apps: appsSnapshot.docs.map((d) => d.data() as AppData),
+          };
+        })
+      );
+
+      const months = snaps.map(s => s.month);
+      const appsByMonth: Record<string, AppData[]> = {};
+      for (const { month, apps } of monthResults) {
+        appsByMonth[month] = apps;
+      }
+      return { months, appsByMonth };
+    }
+
     async function fetchAll() {
       setLoading(true);
       setError(null);
@@ -52,38 +166,13 @@ export function useMultiGenreSnapshots(selectedGenres: Genre[], risingThreshold:
       try {
         const genreResults = await Promise.all(
           selectedGenres.map(async (genre) => {
-            const timeField = granularity === 'week' ? 'week' : 'month';
-            const constraints = [
-              where('genreId', '==', genre.id),
-              orderBy(timeField, 'asc'),
-            ];
-            if (granularity === 'week') {
-              constraints.splice(1, 0, where('granularity', '==', 'week'));
+            const cacheKey = `${genre.id}|${granularity}`;
+            let raw = force ? undefined : genreRawCache.get(cacheKey);
+            if (!raw) {
+              raw = await fetchGenreRaw(genre);
+              genreRawCache.set(cacheKey, raw);
             }
-            const snapshotsQuery = query(collection(db, 'snapshots'), ...constraints);
-            const snapshotsSnapshot = await getDocs(snapshotsQuery);
-            const snaps = snapshotsSnapshot.docs.map((d) => ({
-              id: d.id,
-              month: (d.data()[timeField] as string),
-            }));
-
-            const monthResults = await Promise.all(
-              snaps.map(async (snap) => {
-                const appsSnapshot = await getDocs(collection(db, 'snapshots', snap.id, 'apps'));
-                return {
-                  month: snap.month,
-                  apps: appsSnapshot.docs.map((d) => d.data() as AppData),
-                };
-              })
-            );
-
-            const months = snaps.map(s => s.month);
-            const appsByMonth: Record<string, AppData[]> = {};
-            for (const { month, apps } of monthResults) {
-              appsByMonth[month] = apps;
-            }
-
-            return { genre, months, appsByMonth };
+            return { genre, months: raw.months, appsByMonth: raw.appsByMonth };
           })
         );
 
@@ -175,7 +264,10 @@ export function useMultiGenreSnapshots(selectedGenres: Genre[], risingThreshold:
     return { rows, months: rawResults.months };
   }, [rawResults, risingThreshold]);
 
-  const refresh = () => setRefreshCounter(c => c + 1);
+  const refresh = () => {
+    forceRefreshRef.current = true;
+    setRefreshCounter(c => c + 1);
+  };
 
   return { ...results, loading, error, refresh };
 }

@@ -1,6 +1,10 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth, GoogleAuthProvider } from 'firebase/auth';
-import { initializeFirestore } from 'firebase/firestore';
+import {
+  initializeFirestore,
+  persistentLocalCache,
+  persistentMultipleTabManager,
+} from 'firebase/firestore';
 import { getFunctions } from 'firebase/functions';
 
 const firebaseConfig = {
@@ -16,7 +20,18 @@ const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
-export const db = initializeFirestore(app, {}, 'companalysis');
+// IndexedDB-backed cache: repeat visits and genre toggles serve from local
+// cache first (instant), then reconcile with the server in the background.
+// Snapshot data only changes on the weekly fetch, so cache hits are the norm.
+export const db = initializeFirestore(
+  app,
+  {
+    localCache: persistentLocalCache({
+      tabManager: persistentMultipleTabManager(),
+    }),
+  },
+  'companalysis'
+);
 export const functions = getFunctions(app);
 export const googleProvider = new GoogleAuthProvider();
 googleProvider.setCustomParameters({ hd: 'unity3d.com' });
