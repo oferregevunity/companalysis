@@ -38,7 +38,7 @@ function getLastNMonths(n: number): { month: string; startDate: string; endDate:
   return months.reverse();
 }
 
-async function getCachedMetadata(appIds: string[]): Promise<Map<string, AppMetadata>> {
+export async function getCachedMetadata(appIds: string[]): Promise<Map<string, AppMetadata>> {
   const db = getDb();
   const metaMap = new Map<string, AppMetadata>();
   const BATCH_SIZE = 30;
@@ -55,6 +55,7 @@ async function getCachedMetadata(appIds: string[]): Promise<Map<string, AppMetad
             publisherName: data.publisherName || '',
             iosAppId: data.iosAppId || null,
             androidAppId: data.androidAppId || null,
+            iconUrl: data.iconUrl || null,
           });
         }
       }
@@ -64,7 +65,7 @@ async function getCachedMetadata(appIds: string[]): Promise<Map<string, AppMetad
   return metaMap;
 }
 
-async function cacheMetadata(metaMap: Map<string, AppMetadata>): Promise<void> {
+export async function cacheMetadata(metaMap: Map<string, AppMetadata>): Promise<void> {
   const db = getDb();
   const entries = Array.from(metaMap.entries());
   const BATCH_SIZE = 400;
@@ -73,17 +74,15 @@ async function cacheMetadata(metaMap: Map<string, AppMetadata>): Promise<void> {
     const batch = db.batch();
     const chunk = entries.slice(i, i + BATCH_SIZE);
     for (const [id, meta] of chunk) {
-      batch.set(
-        db.collection('appNames').doc(id),
-        {
-          name: meta.name,
-          publisherName: meta.publisherName,
-          iosAppId: meta.iosAppId,
-          androidAppId: meta.androidAppId,
-          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-        },
-        { merge: true }
-      );
+      const payload: Record<string, unknown> = {
+        name: meta.name,
+        publisherName: meta.publisherName,
+        iosAppId: meta.iosAppId,
+        androidAppId: meta.androidAppId,
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      };
+      if (meta.iconUrl) payload.iconUrl = meta.iconUrl;
+      batch.set(db.collection('appNames').doc(id), payload, { merge: true });
     }
     await batch.commit();
   }

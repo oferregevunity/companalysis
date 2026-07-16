@@ -423,6 +423,36 @@ export const compAnalysisApi = onRequest(
           });
         }
 
+        case 'apps/search': {
+          const { term } = req.body || {};
+          if (!term || typeof term !== 'string' || term.trim().length < 2) {
+            sendError(res, 400, 'term (string, min 2 chars) is required');
+            return;
+          }
+          const { searchUnifiedApps } = await import('./sensorTower/client');
+          const apps = await searchUnifiedApps(term.trim(), sensorTowerAuthToken.value().trim(), 10);
+          sendSuccess(res, { apps });
+          return;
+        }
+
+        case 'apps/competitors': {
+          const { category, country, excludeAppId, limit } = req.body || {};
+          if (!category || typeof category !== 'string') {
+            sendError(res, 400, 'category (string) is required');
+            return;
+          }
+          const { fetchCompetitorsForCategory } = await import('./sensorTower/competitors');
+          const competitors = await fetchCompetitorsForCategory({
+            authToken: sensorTowerAuthToken.value().trim(),
+            category,
+            country: typeof country === 'string' ? country : undefined,
+            excludeAppId: typeof excludeAppId === 'string' ? excludeAppId : undefined,
+            limit: typeof limit === 'number' ? limit : undefined,
+          });
+          sendSuccess(res, { competitors });
+          return;
+        }
+
         case 'creatives/trigger': {
           const { genreId, weekStart, weekEnd } = req.body || {};
           if (!genreId || !weekStart || !weekEnd) {

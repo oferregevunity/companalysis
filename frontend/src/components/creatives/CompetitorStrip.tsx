@@ -1,11 +1,22 @@
 import { useMemo } from 'react';
-import type { TrackedApp } from '../../hooks/useTrackedApps';
 import type { JoinedCreative } from '../../hooks/useCreativesForGenre';
 import type { AppNameMapEntry } from '../../hooks/useAppNames';
 
+/** Minimal app shape the strip needs — fed live from the Sensor Tower API. */
+export interface CompetitorApp {
+  appId: string;
+  name: string;
+  publisherName: string;
+  /** Last complete month's store revenue (USD); null when unknown. */
+  latestRevenue: number | null;
+  iconUrl?: string | null;
+}
+
 export interface CompetitorStripProps {
-  focusApp: TrackedApp;
-  competitors: TrackedApp[];
+  focusApp: CompetitorApp;
+  competitors: CompetitorApp[];
+  loading: boolean;
+  error: string | null;
   creatives: JoinedCreative[];
   appNames: Map<string, AppNameMapEntry>;
   selectedAppIds: Set<string>;
@@ -32,7 +43,7 @@ function CompetitorCard({
   isFocus,
   onClick,
 }: {
-  app: TrackedApp;
+  app: CompetitorApp;
   stats: AppCreativeStats | undefined;
   icon: string | null | undefined;
   selected: boolean;
@@ -77,19 +88,24 @@ function CompetitorCard({
           </span>
         )}
       </div>
-      <span className="text-[10px] text-gray-400 tabular-nums">{formatCompact(app.latestRevenue)}/mo revenue</span>
+      {app.latestRevenue != null && (
+        <span className="text-[10px] text-gray-400 tabular-nums">{formatCompact(app.latestRevenue)}/mo revenue</span>
+      )}
     </button>
   );
 }
 
 /**
- * Ranked competitor rail for the focused game: who they are, how many active
- * creatives each is running this week, and their best creative score.
+ * Ranked competitor rail for the focused game, fetched live from Sensor
+ * Tower (top revenue apps in the game's category): who they are, how many
+ * active creatives each is running this week, and their best creative score.
  * Clicking a card filters the gallery to that competitor.
  */
 export function CompetitorStrip({
   focusApp,
   competitors,
+  loading,
+  error,
   creatives,
   appNames,
   selectedAppIds,
@@ -118,7 +134,7 @@ export function CompetitorStrip({
       const as = a.stats?.topScore ?? -1;
       const bs = b.stats?.topScore ?? -1;
       if (as !== bs) return bs - as;
-      return b.app.latestRevenue - a.app.latestRevenue;
+      return (b.app.latestRevenue ?? 0) - (a.app.latestRevenue ?? 0);
     });
     return withStats.slice(0, 12);
   }, [competitors, statsByApp]);
@@ -130,9 +146,11 @@ export function CompetitorStrip({
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <h3 className="text-sm font-semibold text-gray-900">
           Competitors of {focusApp.name}
-          <span className="ml-2 text-xs font-normal text-gray-500">
-            {activeCount} of {ordered.length} running ads this week
-          </span>
+          {!loading && ordered.length > 0 && (
+            <span className="ml-2 text-xs font-normal text-gray-500">
+              {activeCount} of {ordered.length} running ads this week · top of category by revenue
+            </span>
+          )}
         </h3>
         {selectedAppIds.size > 0 && (
           <button type="button" onClick={onShowAll} className="text-xs font-medium text-blue-600 hover:text-blue-800">
@@ -140,27 +158,36 @@ export function CompetitorStrip({
           </button>
         )}
       </div>
-      <div className="flex gap-3 overflow-x-auto pb-1">
-        <CompetitorCard
-          app={focusApp}
-          stats={statsByApp.get(focusApp.appId)}
-          icon={appNames.get(focusApp.appId)?.iconUrl}
-          selected={selectedAppIds.has(focusApp.appId)}
-          isFocus
-          onClick={() => onToggleApp(focusApp.appId)}
-        />
-        {ordered.map(({ app, stats }) => (
+      {loading ? (
+        <p className="flex items-center gap-2 py-3 text-sm text-gray-400">
+          <span className="w-3.5 h-3.5 shrink-0 rounded-full border-2 border-gray-200 border-t-gray-500 animate-spin" />
+          Finding competitors on Sensor Tower…
+        </p>
+      ) : error ? (
+        <p className="py-3 text-sm text-red-600">Could not load competitors: {error}</p>
+      ) : (
+        <div className="flex gap-3 overflow-x-auto pb-1">
           <CompetitorCard
-            key={app.appId}
-            app={app}
-            stats={stats}
-            icon={appNames.get(app.appId)?.iconUrl}
-            selected={selectedAppIds.has(app.appId)}
-            isFocus={false}
-            onClick={() => onToggleApp(app.appId)}
+            app={focusApp}
+            stats={statsByApp.get(focusApp.appId)}
+            icon={focusApp.iconUrl ?? appNames.get(focusApp.appId)?.iconUrl}
+            selected={selectedAppIds.has(focusApp.appId)}
+            isFocus
+            onClick={() => onToggleApp(focusApp.appId)}
           />
-        ))}
-      </div>
+          {ordered.map(({ app, stats }) => (
+            <CompetitorCard
+              key={app.appId}
+              app={app}
+              stats={stats}
+              icon={app.iconUrl ?? appNames.get(app.appId)?.iconUrl}
+              selected={selectedAppIds.has(app.appId)}
+              isFocus={false}
+              onClick={() => onToggleApp(app.appId)}
+            />
+          ))}
+        </div>
+      )}
     </div>
   );
 }

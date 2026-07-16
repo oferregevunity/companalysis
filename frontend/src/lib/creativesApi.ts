@@ -73,6 +73,47 @@ export function fetchCreativesForApp(
   return callFunction<FetchAppCreativesResult>('creatives/fetch-app', { appId, genreId, weekStart, weekEnd });
 }
 
+/** One unified-app hit from Sensor Tower search (via our `apps/search` proxy). */
+export interface SearchedGame {
+  appId: string;
+  name: string;
+  publisherName: string;
+  iosAppId: string | null;
+  androidAppId: string | null;
+  iconUrl: string | null;
+  /** iOS numeric category ids as strings (e.g. "7017"). */
+  iosCategories: string[];
+  /** Android category slugs, upper-cased (e.g. "GAME_STRATEGY"). */
+  androidCategories: string[];
+  /** Sensor Tower's best single game category (iOS numeric id as string). */
+  gameCategory: string | null;
+}
+
+/** Live game search against the Sensor Tower catalog — any app, not just tracked ones. */
+export function searchGames(term: string): Promise<{ apps: SearchedGame[] }> {
+  return callFunction<{ apps: SearchedGame[] }>('apps/search', { term });
+}
+
+export interface ApiCompetitor {
+  appId: string;
+  name: string;
+  publisherName: string;
+  iosAppId: string | null;
+  androidAppId: string | null;
+  iconUrl: string | null;
+  /** Last complete month's store revenue (USD). */
+  revenue: number;
+  downloads: number;
+}
+
+/** Live top-by-revenue competitors for a Sensor Tower category (last complete month). */
+export function fetchCompetitorsForCategory(
+  category: string,
+  opts: { country?: string; excludeAppId?: string; limit?: number } = {},
+): Promise<{ competitors: ApiCompetitor[] }> {
+  return callFunction<{ competitors: ApiCompetitor[] }>('apps/competitors', { category, ...opts });
+}
+
 export function getWatchlistApps(): Promise<{ appIds: string[] }> {
   return callFunction<{ appIds: string[] }>('creatives/watchlist', {});
 }

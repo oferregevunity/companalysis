@@ -52,6 +52,62 @@ export interface AppMetadata {
   publisherName: string;
   iosAppId: string | null;
   androidAppId: string | null;
+  iconUrl?: string | null;
+}
+
+/** One unified-app hit from Sensor Tower's `search_entities`, with the category info needed to map it to a tracked genre. */
+export interface SearchedApp {
+  appId: string;
+  name: string;
+  publisherName: string;
+  iosAppId: string | null;
+  androidAppId: string | null;
+  iconUrl: string | null;
+  /** iOS numeric category ids as strings (e.g. "7017"). */
+  iosCategories: string[];
+  /** Android category slugs, upper-cased to match genre config (e.g. "GAME_STRATEGY"). */
+  androidCategories: string[];
+  /** Sensor Tower's best single game category (iOS numeric id as string), if any. */
+  gameCategory: string | null;
+}
+
+function parseSearchItem(item: any): SearchedApp {
+  const iosApp = item.ios_apps?.[0];
+  const androidApp = item.android_apps?.[0];
+  const iosCategories = (iosApp?.categories ?? [])
+    .map((c: unknown) => String(c))
+    .filter((c: string) => c.length > 0);
+  const androidCategories = (androidApp?.categories ?? [])
+    .map((c: unknown) => String(c).toUpperCase())
+    .filter((c: string) => c.length > 0);
+  const gameCategory = item.game_category ?? item.primary_category;
+  return {
+    appId: String(item.app_id ?? item.id ?? ''),
+    name: item.name || item.humanized_name || String(item.app_id ?? ''),
+    publisherName: item.publisher_name || '',
+    iosAppId: iosApp?.app_id != null ? String(iosApp.app_id) : null,
+    androidAppId: androidApp?.app_id != null ? String(androidApp.app_id) : null,
+    iconUrl: item.icon_url || iosApp?.icon_url || androidApp?.icon_url || null,
+    iosCategories,
+    androidCategories,
+    gameCategory: gameCategory != null ? String(gameCategory) : null,
+  };
+}
+
+/**
+ * Search Sensor Tower's unified app catalog by name. Powers the Creatives
+ * page game search, so any live app is findable — not just tracked ones.
+ */
+export async function searchUnifiedApps(term: string, authToken: string, limit = 10): Promise<SearchedApp[]> {
+  const url = `${BASE_URL}/unified/search_entities?` +
+    new URLSearchParams({ entity_type: 'app', term, limit: String(limit) }).toString();
+
+  const data = await fetchWithRetry(url, {
+    headers: { Authorization: `Bearer ${authToken}` },
+  });
+
+  const items: any[] = Array.isArray(data) ? data : data?.items || data?.data || [];
+  return items.map(parseSearchItem).filter((a) => a.appId);
 }
 
 export interface FetchTopAppsParams {
@@ -163,10 +219,11 @@ export async function resolveAppMetadata(
               publisherName: item.publisher_name || '',
               iosAppId: iosApp?.app_id ? String(iosApp.app_id) : null,
               androidAppId: androidApp?.app_id ? String(androidApp.app_id) : null,
+              iconUrl: item.icon_url || iosApp?.icon_url || androidApp?.icon_url || null,
             } as AppMetadata,
           };
         }
-        return { id, meta: { name: id, publisherName: '', iosAppId: null, androidAppId: null } as AppMetadata };
+        return { id, meta: { name: id, publisherName: '', iosAppId: null, androidAppId: null, iconUrl: null } as AppMetadata };
       })
     );
 

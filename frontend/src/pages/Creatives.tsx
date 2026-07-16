@@ -3,13 +3,14 @@ import { useGenres } from '../hooks/useGenres';
 import { useCreativeInsights } from '../hooks/useCreativeInsights';
 import { useCreativesForGenre } from '../hooks/useCreativesForGenre';
 import { useGenreDataStatus } from '../hooks/useGenreDataStatus';
-import { useTrackedApps, type TrackedApp } from '../hooks/useTrackedApps';
+import { useApiCompetitors } from '../hooks/useApiCompetitors';
 import { getCreativeWeekBounds, getLatestCreativeWeek } from '../lib/creativesWeek';
-import { fetchCreativesForApp, triggerCreativesForGenre } from '../lib/creativesApi';
+import { fetchCreativesForApp, triggerCreativesForGenre, type SearchedGame } from '../lib/creativesApi';
+import { matchGenresForGame } from '../lib/gameGenres';
 import { AIHighlightsStrip } from '../components/creatives/AIHighlightsStrip';
 import { CreativeGallery } from '../components/creatives/CreativeGallery';
 import { GameSearch } from '../components/creatives/GameSearch';
-import { CompetitorStrip } from '../components/creatives/CompetitorStrip';
+import { CompetitorStrip, type CompetitorApp } from '../components/creatives/CompetitorStrip';
 import { HookThemePanel } from '../components/creatives/HookThemePanel';
 import {
   buildAppOptions,
@@ -23,7 +24,25 @@ import type { CreativeFormat, CreativeTag, QueryableAdNetwork } from '../types/c
 import type { JoinedCreative } from '../hooks/useCreativesForGenre';
 
 const STORAGE_KEY = 'creatives.selectedGenreId';
-const FOCUS_APP_KEY = 'creatives.focusAppId';
+// Full SearchedGame JSON — the focused game comes from live Sensor Tower
+// search and may not exist anywhere in our own DB.
+const FOCUS_APP_KEY = 'creatives.focusApp';
+
+function loadStoredFocusApp(): SearchedGame | null {
+  try {
+    const raw = localStorage.getItem(FOCUS_APP_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as SearchedGame;
+    if (!parsed || typeof parsed.appId !== 'string' || typeof parsed.name !== 'string') return null;
+    return {
+      ...parsed,
+      iosCategories: Array.isArray(parsed.iosCategories) ? parsed.iosCategories : [],
+      androidCategories: Array.isArray(parsed.androidCategories) ? parsed.androidCategories : [],
+    };
+  } catch {
+    return null;
+  }
+}
 
 function generatedAtToDate(
   v: { seconds: number; nanoseconds: number } | Date | { toDate: () => Date } | undefined | null,
@@ -142,13 +161,7 @@ function applyCreativeFilters(
 export default function Creatives() {
   const { genres, loading: genresLoading } = useGenres();
   const [selectedGenreId, setSelectedGenreId] = useState<string>('');
-  const [focusAppId, setFocusAppId] = useState<string | null>(() => {
-    try {
-      return localStorage.getItem(FOCUS_APP_KEY);
-    } catch {
-      return null;
-    }
-  });
+  const [focusApp, setFocusApp] = useState<SearchedGame | null>(() => loadStoredFocusApp());
   const [generating, setGenerating] = useState(false);
   const [reanalyzeError, setReanalyzeError] = useState<string | null>(null);
   const [reanalyzeSuccess, setReanalyzeSuccess] = useState<string | null>(null);
@@ -157,10 +170,10 @@ export default function Creatives() {
 
   const latestWeek = useMemo(() => getLatestCreativeWeek(), []);
 
-  const { apps: trackedApps, loading: trackedAppsLoading } = useTrackedApps(genres);
-  const focusApp = useMemo(
-    () => (focusAppId ? trackedApps.find((a) => a.appId === focusAppId) ?? null : null),
-    [trackedApps, focusAppId],
+  /** Tracked genres the focused game belongs to, matched by store category. */
+  const matchedGenreIds = useMemo(
+    () => (focusApp ? matchGenresForGame(focusApp, genres).map((g) => g.id) : []),
+    [focusApp, genres],
   );
 
   useEffect(() => {
@@ -184,8 +197,8 @@ export default function Creatives() {
       setReanalyzeSuccess(null);
       setFilters((prev) => ({ ...prev, appIds: new Set(), hookTypes: new Set(), themes: new Set() }));
       // Manually browsing to a genre the focused game isn't in drops the focus.
-      if (focusApp && !focusApp.genreIds.includes(id)) {
-        setFocusAppId(null);
+      if (focusApp && !matchedGenreIds.includes(id)) {
+        setFocusApp(null);
         try {
           localStorage.removeItem(FOCUS_APP_KEY);
         } catch {
@@ -198,21 +211,22 @@ export default function Creatives() {
         /* ignore */
       }
     },
-    [focusApp],
+    [focusApp, matchedGenreIds],
   );
 
   const selectFocusApp = useCallback(
-    (app: TrackedApp) => {
-      setFocusAppId(app.appId);
+    (app: SearchedGame) => {
+      setFocusApp(app);
       try {
-        localStorage.setItem(FOCUS_APP_KEY, app.appId);
+        localStorage.setItem(FOCUS_APP_KEY, JSON.stringify(app));
       } catch {
         /* ignore */
       }
       // Pivot the page to the game's genre (keep the current one when it applies).
       setFilters((prev) => ({ ...prev, appIds: new Set(), hookTypes: new Set(), themes: new Set() }));
+      const appGenreIds = matchGenresForGame(app, genres).map((g) => g.id);
       setSelectedGenreId((cur) => {
-        const next = app.genreIds.includes(cur) ? cur : app.genreIds[0] ?? cur;
+        const next = appGenreIds.includes(cur) ? cur : appGenreIds[0] ?? cur;
         try {
           localStorage.setItem(STORAGE_KEY, next);
         } catch {
@@ -221,11 +235,11 @@ export default function Creatives() {
         return next;
       });
     },
-    [],
+    [genres],
   );
 
   const clearFocusApp = useCallback(() => {
-    setFocusAppId(null);
+    setFocusApp(null);
     setFilters((prev) => ({ ...prev, appIds: new Set() }));
     try {
       localStorage.removeItem(FOCUS_APP_KEY);
@@ -288,13 +302,13 @@ export default function Creatives() {
 
   useEffect(() => {
     if (!focusApp || !selectedGenreId || creativesLoading) return;
-    if (!focusApp.genreIds.includes(selectedGenreId)) return;
+    if (!matchedGenreIds.includes(selectedGenreId)) return;
     if (joinedCreatives.some((c) => c.appId === focusApp.appId)) return;
     const attemptKey = `${focusApp.appId}|${selectedGenreId}|${latestWeek}`;
     if (appFetchAttemptsRef.current.has(attemptKey)) return;
     appFetchAttemptsRef.current.add(attemptKey);
     runAppFetch(focusApp.appId, focusApp.name, selectedGenreId);
-  }, [focusApp, selectedGenreId, creativesLoading, joinedCreatives, latestWeek, runAppFetch]);
+  }, [focusApp, matchedGenreIds, selectedGenreId, creativesLoading, joinedCreatives, latestWeek, runAppFetch]);
 
   const tagMap = useMemo(() => {
     const m = new Map<string, CreativeTag>();
@@ -304,14 +318,61 @@ export default function Creatives() {
     return m;
   }, [insightDoc]);
 
-  // Competitors: everyone else tracked in the focused game's genre, by revenue.
-  const competitors = useMemo(() => {
-    if (!focusApp || !selectedGenreId) return [];
-    return trackedApps
-      .filter((a) => a.appId !== focusApp.appId && a.genreIds.includes(selectedGenreId))
-      .sort((a, b) => b.latestRevenue - a.latestRevenue)
-      .slice(0, 40);
-  }, [trackedApps, focusApp, selectedGenreId]);
+  // Competitors: fetched live from the Sensor Tower API — top revenue apps in
+  // the focused game's category (not from our stored snapshots).
+  const selectedGenre = useMemo(
+    () => genres.find((g) => g.id === selectedGenreId) ?? null,
+    [genres, selectedGenreId],
+  );
+  const competitorCategory = useMemo(() => {
+    if (!focusApp) return null;
+    // Stay aligned with the page's genre when the game belongs to it, so the
+    // competitor rail and the creatives gallery talk about the same arena.
+    if (selectedGenre && matchedGenreIds.includes(selectedGenre.id)) {
+      return selectedGenre.categoryIds.ios || selectedGenre.categoryIds.android.toLowerCase() || null;
+    }
+    return (
+      focusApp.gameCategory ||
+      focusApp.iosCategories[0] ||
+      focusApp.androidCategories[0]?.toLowerCase() ||
+      null
+    );
+  }, [focusApp, selectedGenre, matchedGenreIds]);
+  const competitorCountry =
+    selectedGenre && matchedGenreIds.includes(selectedGenre.id) ? selectedGenre.country : 'US';
+
+  const {
+    competitors: apiCompetitors,
+    focusRow,
+    loading: competitorsLoading,
+    error: competitorsError,
+  } = useApiCompetitors(competitorCategory, competitorCountry, focusApp?.appId ?? null);
+
+  const competitors = useMemo<CompetitorApp[]>(
+    () =>
+      apiCompetitors.map((c) => ({
+        appId: c.appId,
+        name: c.name,
+        publisherName: c.publisherName,
+        latestRevenue: c.revenue,
+        iconUrl: c.iconUrl,
+      })),
+    [apiCompetitors],
+  );
+
+  const focusStripApp = useMemo<CompetitorApp | null>(
+    () =>
+      focusApp
+        ? {
+            appId: focusApp.appId,
+            name: focusApp.name,
+            publisherName: focusApp.publisherName,
+            latestRevenue: focusRow?.revenue ?? null,
+            iconUrl: focusApp.iconUrl,
+          }
+        : null,
+    [focusApp, focusRow],
+  );
 
   const appIds = useMemo(() => {
     const ids = joinedCreatives.map((c) => c.appId);
@@ -475,9 +536,7 @@ export default function Creatives() {
       </div>
 
       <GameSearch
-        apps={trackedApps}
         genres={genres}
-        loading={trackedAppsLoading}
         focusApp={focusApp}
         onSelect={selectFocusApp}
         onClear={clearFocusApp}
@@ -560,10 +619,12 @@ export default function Creatives() {
         </div>
       )}
 
-      {focusApp && selectedGenreId && focusApp.genreIds.includes(selectedGenreId) && (
+      {focusStripApp && (
         <CompetitorStrip
-          focusApp={focusApp}
+          focusApp={focusStripApp}
           competitors={competitors}
+          loading={competitorsLoading}
+          error={competitorsError}
           creatives={joinedCreatives}
           appNames={appNames}
           selectedAppIds={filters.appIds}
