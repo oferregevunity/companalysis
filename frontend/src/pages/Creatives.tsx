@@ -1,11 +1,11 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useGenres } from '../hooks/useGenres';
 import { useCreativeInsights } from '../hooks/useCreativeInsights';
 import { useCreativesForGenre } from '../hooks/useCreativesForGenre';
 import { useGenreDataStatus } from '../hooks/useGenreDataStatus';
 import { useTrackedApps, type TrackedApp } from '../hooks/useTrackedApps';
 import { getCreativeWeekBounds, getLatestCreativeWeek } from '../lib/creativesWeek';
-import { triggerCreativesForGenre } from '../lib/creativesApi';
+import { fetchCreativesForApp, triggerCreativesForGenre } from '../lib/creativesApi';
 import { AIHighlightsStrip } from '../components/creatives/AIHighlightsStrip';
 import { CreativeGallery } from '../components/creatives/CreativeGallery';
 import { GameSearch } from '../components/creatives/GameSearch';
@@ -235,7 +235,11 @@ export default function Creatives() {
   }, []);
 
   const { data: insightDoc, loading: insightLoading } = useCreativeInsights(selectedGenreId, latestWeek);
-  const { creatives: joinedCreatives, loading: creativesLoading } = useCreativesForGenre(selectedGenreId, latestWeek);
+  const {
+    creatives: joinedCreatives,
+    loading: creativesLoading,
+    refresh: refreshCreatives,
+  } = useCreativesForGenre(selectedGenreId, latestWeek);
   const { statusMap: genreStatusMap } = useGenreDataStatus(selectedGenreId ? [selectedGenreId] : []);
   const creativesRunStatus = selectedGenreId ? genreStatusMap[selectedGenreId]?.creatives : undefined;
 
@@ -249,6 +253,48 @@ export default function Creatives() {
     }
     return m;
   }, [insightDoc]);
+
+  // Auto-fetch creatives for the focused game when it has none this week
+  // (it was outside the top-N fetch scope). One attempt per app+genre+week.
+  const [appFetch, setAppFetch] = useState<
+    | { status: 'fetching'; appId: string; appName: string }
+    | { status: 'done'; appId: string; appName: string; count: number }
+    | { status: 'error'; appId: string; appName: string; message: string }
+    | null
+  >(null);
+  const appFetchAttemptsRef = useRef<Set<string>>(new Set());
+
+  const runAppFetch = useCallback(
+    (appId: string, appName: string, genreId: string) => {
+      void (async () => {
+        setAppFetch({ status: 'fetching', appId, appName });
+        try {
+          const { startDate, endDate } = getCreativeWeekBounds(latestWeek);
+          const result = await fetchCreativesForApp(appId, genreId, startDate, endDate);
+          setAppFetch({ status: 'done', appId, appName, count: result.creativeCount });
+          if (result.creativeCount > 0) refreshCreatives();
+        } catch (err) {
+          setAppFetch({
+            status: 'error',
+            appId,
+            appName,
+            message: err instanceof Error ? err.message : 'Fetch failed.',
+          });
+        }
+      })();
+    },
+    [latestWeek, refreshCreatives],
+  );
+
+  useEffect(() => {
+    if (!focusApp || !selectedGenreId || creativesLoading) return;
+    if (!focusApp.genreIds.includes(selectedGenreId)) return;
+    if (joinedCreatives.some((c) => c.appId === focusApp.appId)) return;
+    const attemptKey = `${focusApp.appId}|${selectedGenreId}|${latestWeek}`;
+    if (appFetchAttemptsRef.current.has(attemptKey)) return;
+    appFetchAttemptsRef.current.add(attemptKey);
+    runAppFetch(focusApp.appId, focusApp.name, selectedGenreId);
+  }, [focusApp, selectedGenreId, creativesLoading, joinedCreatives, latestWeek, runAppFetch]);
 
   const tagMap = useMemo(() => {
     const m = new Map<string, CreativeTag>();
@@ -462,6 +508,57 @@ export default function Creatives() {
           ))
         )}
       </div>
+
+      {appFetch && focusApp && appFetch.appId === focusApp.appId && (
+        <div
+          className={`flex items-center gap-2 rounded-xl border px-3 py-2 text-sm ${
+            appFetch.status === 'fetching'
+              ? 'border-blue-200 bg-blue-50 text-blue-800'
+              : appFetch.status === 'error'
+                ? 'border-red-200 bg-red-50 text-red-700'
+                : 'border-emerald-200 bg-emerald-50 text-emerald-800'
+          }`}
+        >
+          {appFetch.status === 'fetching' && (
+            <>
+              <span className="w-3.5 h-3.5 shrink-0 rounded-full border-2 border-blue-200 border-t-blue-600 animate-spin" />
+              <span>
+                Fetching this week's creatives for <span className="font-semibold">{appFetch.appName}</span>… usually
+                under a minute.
+              </span>
+            </>
+          )}
+          {appFetch.status === 'done' && (
+            <span>
+              {appFetch.count > 0
+                ? `Fetched ${appFetch.count} creative${appFetch.count === 1 ? '' : 's'} for ${appFetch.appName} and added it to the team watchlist.`
+                : `No creatives found for ${appFetch.appName} this week — it's now on the team watchlist for future fetches.`}
+            </span>
+          )}
+          {appFetch.status === 'error' && (
+            <span>
+              Could not fetch creatives for {appFetch.appName}: {appFetch.message}{' '}
+              <button
+                type="button"
+                onClick={() => runAppFetch(appFetch.appId, appFetch.appName, selectedGenreId)}
+                className="font-semibold underline hover:no-underline"
+              >
+                Retry
+              </button>
+            </span>
+          )}
+          <button
+            type="button"
+            onClick={() => setAppFetch(null)}
+            className="ml-auto shrink-0 rounded-full p-0.5 opacity-60 hover:opacity-100"
+            aria-label="Dismiss"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18 18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+      )}
 
       {focusApp && selectedGenreId && focusApp.genreIds.includes(selectedGenreId) && (
         <CompetitorStrip

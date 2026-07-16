@@ -52,6 +52,27 @@ export function triggerCreativesForGenre(
   return callFunction<TriggerCreativesResult>('creatives/trigger', { genreId, weekStart, weekEnd });
 }
 
+export interface FetchAppCreativesResult {
+  success: boolean;
+  creativeCount: number;
+  scoredCount: number;
+  partialErrors: string[];
+}
+
+/**
+ * Fetches this week's creatives for a single app (e.g. the focused game when
+ * it wasn't in the top-N scope), merges them into the genre snapshot, adds
+ * the app to the team watchlist, and re-runs statistical scoring.
+ */
+export function fetchCreativesForApp(
+  appId: string,
+  genreId: string,
+  weekStart: string,
+  weekEnd: string,
+): Promise<FetchAppCreativesResult> {
+  return callFunction<FetchAppCreativesResult>('creatives/fetch-app', { appId, genreId, weekStart, weekEnd });
+}
+
 export function getWatchlistApps(): Promise<{ appIds: string[] }> {
   return callFunction<{ appIds: string[] }>('creatives/watchlist', {});
 }
