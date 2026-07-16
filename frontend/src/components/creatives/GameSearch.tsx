@@ -1,45 +1,51 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { TrackedApp } from '../../hooks/useTrackedApps';
+import { useGameSearch } from '../../hooks/useGameSearch';
+import { matchGenresForGame } from '../../lib/gameGenres';
+import type { SearchedGame } from '../../lib/creativesApi';
 import type { Genre } from '../../types';
 
 export interface GameSearchProps {
-  apps: TrackedApp[];
   genres: Genre[];
-  loading: boolean;
-  focusApp: TrackedApp | null;
-  onSelect: (app: TrackedApp) => void;
+  focusApp: SearchedGame | null;
+  onSelect: (app: SearchedGame) => void;
   onClear: () => void;
 }
 
-function rankMatches(apps: TrackedApp[], q: string): TrackedApp[] {
-  const query = q.trim().toLowerCase();
-  if (!query) return [];
-  const scored: Array<{ app: TrackedApp; rank: number }> = [];
-  for (const app of apps) {
-    const name = app.name.toLowerCase();
-    const pub = app.publisherName.toLowerCase();
-    let rank: number | null = null;
-    if (name.startsWith(query)) rank = 0;
-    else if (name.includes(query)) rank = 1;
-    else if (pub.includes(query)) rank = 2;
-    if (rank !== null) scored.push({ app, rank });
+function GenreChips({ game, genres }: { game: SearchedGame; genres: Genre[] }) {
+  const matched = matchGenresForGame(game, genres);
+  if (matched.length === 0) {
+    return (
+      <span className="inline-flex px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-gray-100 text-gray-500">
+        Genre not tracked
+      </span>
+    );
   }
-  scored.sort((a, b) => a.rank - b.rank || b.app.latestRevenue - a.app.latestRevenue);
-  return scored.slice(0, 8).map((s) => s.app);
+  return (
+    <>
+      {matched.slice(0, 2).map((g) => (
+        <span key={g.id} className="inline-flex px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-gray-100 text-gray-600">
+          {g.name}
+        </span>
+      ))}
+    </>
+  );
 }
 
 /**
- * Search-first entry point: type your game's name, pick it, and the page
- * pivots to that game's genre + competitors.
+ * Search-first entry point: type any game's name (live Sensor Tower catalog
+ * search), pick it, and the page pivots to that game's genre + competitors.
  */
-export function GameSearch({ apps, genres, loading, focusApp, onSelect, onClear }: GameSearchProps) {
+export function GameSearch({ genres, focusApp, onSelect, onClear }: GameSearchProps) {
   const [q, setQ] = useState('');
   const [open, setOpen] = useState(false);
   const [highlighted, setHighlighted] = useState(0);
   const rootRef = useRef<HTMLDivElement>(null);
 
-  const genreNames = useMemo(() => new Map(genres.map((g) => [g.id, g.name])), [genres]);
-  const matches = useMemo(() => rankMatches(apps, q), [apps, q]);
+  const { results, searching, error } = useGameSearch(q);
+  const focusGenres = useMemo(
+    () => (focusApp ? matchGenresForGame(focusApp, genres) : []),
+    [focusApp, genres],
+  );
 
   useEffect(() => {
     const onDocClick = (e: MouseEvent) => {
@@ -49,7 +55,10 @@ export function GameSearch({ apps, genres, loading, focusApp, onSelect, onClear 
     return () => document.removeEventListener('mousedown', onDocClick);
   }, []);
 
-  const select = (app: TrackedApp) => {
+  // Results arrive async, so clamp rather than resetting state in an effect.
+  const highlightedIndex = results.length === 0 ? 0 : Math.min(highlighted, results.length - 1);
+
+  const select = (app: SearchedGame) => {
     onSelect(app);
     setQ('');
     setOpen(false);
@@ -59,14 +68,17 @@ export function GameSearch({ apps, genres, loading, focusApp, onSelect, onClear 
     return (
       <div className="flex items-center gap-2 rounded-xl border border-blue-200 bg-blue-50 px-3 py-2">
         <span className="text-xs font-medium text-blue-600 uppercase tracking-wide shrink-0">Your game</span>
+        {focusApp.iconUrl && (
+          <img src={focusApp.iconUrl} alt="" className="w-5 h-5 rounded shrink-0" loading="lazy" />
+        )}
         <span className="text-sm font-semibold text-gray-900 truncate">{focusApp.name}</span>
         {focusApp.publisherName && (
           <span className="text-xs text-gray-500 truncate hidden sm:inline">{focusApp.publisherName}</span>
         )}
         <div className="flex gap-1">
-          {focusApp.genreIds.map((gid) => (
-            <span key={gid} className="inline-flex px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-blue-100 text-blue-800">
-              {genreNames.get(gid) ?? gid}
+          {focusGenres.map((g) => (
+            <span key={g.id} className="inline-flex px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-blue-100 text-blue-800">
+              {g.name}
             </span>
           ))}
         </div>
@@ -100,27 +112,25 @@ export function GameSearch({ apps, genres, loading, focusApp, onSelect, onClear 
         <input
           type="search"
           role="combobox"
-          aria-expanded={open && matches.length > 0}
+          aria-expanded={open && results.length > 0}
           aria-label="Search your game"
-          placeholder={loading ? 'Loading tracked games…' : 'Search your game to find its competitors…'}
+          placeholder="Search any game to find its competitors…"
           value={q}
-          disabled={loading}
           onChange={(e) => {
             setQ(e.target.value);
-            setHighlighted(0);
             setOpen(true);
           }}
           onFocus={() => setOpen(true)}
           onKeyDown={(e) => {
             if (e.key === 'ArrowDown') {
               e.preventDefault();
-              setHighlighted((h) => Math.min(h + 1, matches.length - 1));
+              setHighlighted((h) => Math.min(h + 1, results.length - 1));
             } else if (e.key === 'ArrowUp') {
               e.preventDefault();
               setHighlighted((h) => Math.max(h - 1, 0));
-            } else if (e.key === 'Enter' && matches[highlighted]) {
+            } else if (e.key === 'Enter' && results[highlightedIndex]) {
               e.preventDefault();
-              select(matches[highlighted]);
+              select(results[highlightedIndex]);
             } else if (e.key === 'Escape') {
               setOpen(false);
             }
@@ -129,36 +139,46 @@ export function GameSearch({ apps, genres, loading, focusApp, onSelect, onClear 
         />
       </div>
 
-      {open && q.trim() && (
+      {open && q.trim().length >= 2 && (
         <div className="absolute z-30 mt-1 w-full rounded-xl border border-gray-200 bg-white shadow-lg overflow-hidden">
-          {matches.length === 0 ? (
+          {searching ? (
+            <p className="flex items-center gap-2 px-3 py-2.5 text-sm text-gray-400">
+              <span className="w-3.5 h-3.5 shrink-0 rounded-full border-2 border-gray-200 border-t-gray-500 animate-spin" />
+              Searching Sensor Tower…
+            </p>
+          ) : error ? (
+            <p className="px-3 py-2.5 text-sm text-red-600">Search failed: {error}</p>
+          ) : results.length === 0 ? (
             <p className="px-3 py-2.5 text-sm text-gray-400">
-              No tracked game matches “{q.trim()}”. Games appear here once their genre is tracked in Settings.
+              No game on Sensor Tower matches “{q.trim()}”.
             </p>
           ) : (
             <ul role="listbox">
-              {matches.map((app, i) => (
+              {results.map((app, i) => (
                 <li key={app.appId}>
                   <button
                     type="button"
                     role="option"
-                    aria-selected={i === highlighted}
+                    aria-selected={i === highlightedIndex}
                     onMouseEnter={() => setHighlighted(i)}
                     onClick={() => select(app)}
                     className={`flex w-full items-center gap-2 px-3 py-2 text-left ${
-                      i === highlighted ? 'bg-blue-50' : 'bg-white'
+                      i === highlightedIndex ? 'bg-blue-50' : 'bg-white'
                     }`}
                   >
+                    {app.iconUrl ? (
+                      <img src={app.iconUrl} alt="" className="w-7 h-7 rounded-lg bg-gray-100 shrink-0" loading="lazy" />
+                    ) : (
+                      <div className="w-7 h-7 rounded-lg bg-gray-100 shrink-0 flex items-center justify-center text-[10px] font-semibold text-gray-400">
+                        {app.name.slice(0, 2).toUpperCase()}
+                      </div>
+                    )}
                     <span className="min-w-0 flex-1">
                       <span className="block text-sm font-medium text-gray-900 truncate">{app.name}</span>
                       <span className="block text-xs text-gray-500 truncate">{app.publisherName || '—'}</span>
                     </span>
                     <span className="flex gap-1 shrink-0">
-                      {app.genreIds.slice(0, 2).map((gid) => (
-                        <span key={gid} className="inline-flex px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-gray-100 text-gray-600">
-                          {genreNames.get(gid) ?? gid}
-                        </span>
-                      ))}
+                      <GenreChips game={app} genres={genres} />
                     </span>
                   </button>
                 </li>
