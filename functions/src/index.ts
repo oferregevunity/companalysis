@@ -439,6 +439,36 @@ export const compAnalysisApi = onRequest(
           return sendSuccess(res, result);
         }
 
+        case 'creatives/fetch-app': {
+          const { appId, genreId, weekStart, weekEnd } = req.body || {};
+          if (!appId || !genreId || !weekStart || !weekEnd) {
+            return sendError(res, 400, 'appId, genreId, weekStart, and weekEnd are required');
+          }
+          const fetchAppAuthToken = sensorTowerAuthToken.value().trim();
+          const gDoc = await db.collection('genres').doc(genreId).get();
+          if (!gDoc.exists) {
+            return sendError(res, 404, 'Genre not found');
+          }
+          const genre = { id: gDoc.id, ...gDoc.data() } as any;
+          const [{ fetchCreativesForSingleApp, weekKeyFromStart }, { scoreCreativesForGenre }] =
+            await Promise.all([
+              import('./adIntel/fetchCreativesForGenre'),
+              import('./creativeInsights/scoringPipeline'),
+            ]);
+          const result = await fetchCreativesForSingleApp(genre, appId, weekStart, weekEnd, fetchAppAuthToken);
+          // Re-run the (cheap, statistical) scoring pass so the new creatives
+          // get scores immediately. Gemini insights stay as-is until the next
+          // re-analyze / weekly run.
+          let scored = 0;
+          try {
+            const scoreResult = await scoreCreativesForGenre(genreId, weekKeyFromStart(weekStart));
+            scored = scoreResult.scored;
+          } catch (err) {
+            result.partialErrors.push(`score: ${err instanceof Error ? err.message : String(err)}`);
+          }
+          return sendSuccess(res, { ...result, scoredCount: scored });
+        }
+
         case 'creatives/watchlist': {
           const ref = db.collection('watchlist').doc('team');
           const snap = await ref.get();

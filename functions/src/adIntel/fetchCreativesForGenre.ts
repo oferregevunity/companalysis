@@ -275,6 +275,90 @@ export async function fetchCreativesForGenreWithDeps(deps: FetchGenreDeps): Prom
   };
 }
 
+/**
+ * Fetches creatives for a single app (all tracked networks) and MERGES them
+ * into the genre's existing week snapshot + `creativeLatest`, without
+ * touching other apps' docs. Also adds the app to the team watchlist so the
+ * weekly fetch keeps covering it. Used when a user focuses a game that
+ * wasn't in the top-N fetch scope.
+ */
+export async function fetchCreativesForSingleApp(
+  genre: GenreDoc,
+  appId: string,
+  weekStart: string,
+  weekEnd: string,
+  authToken: string,
+): Promise<FetchGenreResult> {
+  const [{ getFirestore, FieldValue }, { fetchCreativesForApp }] = await Promise.all([
+    import('firebase-admin/firestore'),
+    import('./client'),
+  ]);
+
+  const db = getFirestore('companalysis');
+  const wk = weekKeyFromStart(weekStart);
+  const snapshotRef = db.collection('creativeSnapshots').doc(`${genre.id}_week_${wk}`);
+  const appMetadata = (await loadLatestSnapshotAppMetadata(genre.id, getFirestore)).filter(
+    a => a.appId === appId,
+  );
+
+  // Track this game going forward — idempotent arrayUnion.
+  await db.doc('watchlist/team').set(
+    { appIds: FieldValue.arrayUnion(appId), updatedAt: FieldValue.serverTimestamp() },
+    { merge: true },
+  );
+
+  return fetchCreativesForGenreWithDeps({
+    genre,
+    weekStart,
+    weekEnd,
+    authToken,
+    watchlist: [],
+    appMetadata,
+    resolveApps: async () => [appId],
+    fetchCreatives: fetchCreativesForApp,
+    writeSnapshot: async docs => {
+      // Merge-only: keep the genre-wide snapshot meta (creativeCount etc.)
+      // intact; just make sure the doc exists and record this partial fetch.
+      await snapshotRef.set(
+        {
+          genreId: genre.id,
+          week: wk,
+          weekStart,
+          weekEnd,
+          lastAppFetchAt: FieldValue.serverTimestamp(),
+        },
+        { merge: true },
+      );
+      const BATCH = 400;
+      for (let i = 0; i < docs.length; i += BATCH) {
+        const chunk = docs.slice(i, i + BATCH);
+        const batch = db.batch();
+        for (const doc of chunk) {
+          const docId = creativeDocId(doc.appId, doc.creativeKey);
+          batch.set(snapshotRef.collection('creatives').doc(docId), doc);
+          batch.set(db.collection('creativeLatest').doc(docId), doc);
+        }
+        await batch.commit();
+      }
+    },
+    upsertAppNames: async rows => {
+      if (rows.length === 0) return;
+      const batch = db.batch();
+      for (const r of rows) {
+        const payload: Record<string, unknown> = {
+          name: r.name,
+          updatedAt: FieldValue.serverTimestamp(),
+        };
+        if (r.publisherName !== null) payload.publisherName = r.publisherName;
+        if (r.iosAppId !== null) payload.iosAppId = r.iosAppId;
+        if (r.androidAppId !== null) payload.androidAppId = r.androidAppId;
+        batch.set(db.collection('appNames').doc(r.appId), payload, { merge: true });
+      }
+      await batch.commit();
+    },
+  });
+}
+
 async function loadLatestSnapshotAppMetadata(
   genreId: string,
   getFirestore: typeof import('firebase-admin/firestore').getFirestore,

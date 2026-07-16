@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { collection, getDocs, query, where } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { makeCreativeDocId, type CreativeScoreRow, type CreativeSubScores, type StoredCreative } from '../types/creatives';
@@ -14,6 +14,7 @@ export function useCreativesForGenre(genreId: string, week: string) {
   const [scores, setScores] = useState<Map<string, CreativeScoreRow>>(new Map());
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [refreshKey, setRefreshKey] = useState(0);
 
   useEffect(() => {
     if (!genreId) {
@@ -55,7 +56,7 @@ export function useCreativesForGenre(genreId: string, week: string) {
     return () => {
       cancelled = true;
     };
-  }, [genreId, week]);
+  }, [genreId, week, refreshKey]);
 
   const joined: JoinedCreative[] = useMemo(() => {
     return creatives.map((c) => {
@@ -65,5 +66,8 @@ export function useCreativesForGenre(genreId: string, week: string) {
     });
   }, [creatives, scores]);
 
-  return { creatives: joined, loading, error };
+  /** Re-reads creatives + scores (e.g. after a single-app fetch lands). */
+  const refresh = useCallback(() => setRefreshKey((k) => k + 1), []);
+
+  return { creatives: joined, loading, error, refresh };
 }
