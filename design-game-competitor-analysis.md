@@ -1,7 +1,7 @@
 # Screen: Game Competitor Analysis (Creatives page, game-first flow)
 
 **Date:** 2026-07-16
-**Status:** Draft — under discussion
+**Status:** Shipped 2026-07-16 (PR #7)
 
 ## Purpose
 
