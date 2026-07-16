@@ -9,15 +9,25 @@ export interface JoinedCreative extends StoredCreative {
   subScores?: CreativeSubScores;
 }
 
-export function useCreativesForGenre(genreId: string, week: string) {
+const IN_LIMIT = 30;
+
+/**
+ * Creatives for a game workspace: `creativeLatest` rows for the given apps
+ * (chunked `in` queries), joined with the workspace's score rows under
+ * `creativeInsights/{scopeId}_week_{week}/scores`.
+ */
+export function useCreativesForApps(appIds: string[], scopeId: string, week: string) {
   const [creatives, setCreatives] = useState<StoredCreative[]>([]);
   const [scores, setScores] = useState<Map<string, CreativeScoreRow>>(new Map());
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
 
+  const appKey = useMemo(() => [...new Set(appIds)].sort().join(','), [appIds]);
+
   useEffect(() => {
-    if (!genreId) {
+    const ids = appKey ? appKey.split(',') : [];
+    if (ids.length === 0) {
       setCreatives([]);
       setScores(new Map());
       setLoading(false);
@@ -27,18 +37,22 @@ export function useCreativesForGenre(genreId: string, week: string) {
     setLoading(true);
     void (async () => {
       try {
-        const creativeQ = query(collection(db, 'creativeLatest'), where('genreId', '==', genreId));
-        const creativeSnap = await getDocs(creativeQ);
-        const loadedCreatives = creativeSnap.docs.map((d) => d.data() as StoredCreative);
+        const loadedCreatives: StoredCreative[] = [];
+        for (let i = 0; i < ids.length; i += IN_LIMIT) {
+          const chunk = ids.slice(i, i + IN_LIMIT);
+          const snap = await getDocs(query(collection(db, 'creativeLatest'), where('appId', 'in', chunk)));
+          for (const d of snap.docs) {
+            loadedCreatives.push(d.data() as StoredCreative);
+          }
+        }
 
         const scoresMap = new Map<string, CreativeScoreRow>();
-        if (week) {
+        if (scopeId && week) {
           const scoresSnap = await getDocs(
-            collection(db, 'creativeInsights', `${genreId}_week_${week}`, 'scores'),
+            collection(db, 'creativeInsights', `${scopeId}_week_${week}`, 'scores'),
           );
           for (const s of scoresSnap.docs) {
-            const row = s.data() as CreativeScoreRow;
-            scoresMap.set(s.id, row);
+            scoresMap.set(s.id, s.data() as CreativeScoreRow);
           }
         }
 
@@ -56,7 +70,7 @@ export function useCreativesForGenre(genreId: string, week: string) {
     return () => {
       cancelled = true;
     };
-  }, [genreId, week, refreshKey]);
+  }, [appKey, scopeId, week, refreshKey]);
 
   const joined: JoinedCreative[] = useMemo(() => {
     return creatives.map((c) => {
@@ -66,7 +80,7 @@ export function useCreativesForGenre(genreId: string, week: string) {
     });
   }, [creatives, scores]);
 
-  /** Re-reads creatives + scores (e.g. after a single-app fetch lands). */
+  /** Re-reads creatives + scores (e.g. after fetch/analyze lands). */
   const refresh = useCallback(() => setRefreshKey((k) => k + 1), []);
 
   return { creatives: joined, loading, error, refresh };

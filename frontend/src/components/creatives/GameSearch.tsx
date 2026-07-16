@@ -1,51 +1,24 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useGameSearch } from '../../hooks/useGameSearch';
-import { matchGenresForGame } from '../../lib/gameGenres';
 import type { SearchedGame } from '../../lib/creativesApi';
-import type { Genre } from '../../types';
 
 export interface GameSearchProps {
-  genres: Genre[];
   focusApp: SearchedGame | null;
   onSelect: (app: SearchedGame) => void;
   onClear: () => void;
-}
-
-function GenreChips({ game, genres }: { game: SearchedGame; genres: Genre[] }) {
-  const matched = matchGenresForGame(game, genres);
-  if (matched.length === 0) {
-    return (
-      <span className="inline-flex px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-gray-100 text-gray-500">
-        Genre not tracked
-      </span>
-    );
-  }
-  return (
-    <>
-      {matched.slice(0, 2).map((g) => (
-        <span key={g.id} className="inline-flex px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-gray-100 text-gray-600">
-          {g.name}
-        </span>
-      ))}
-    </>
-  );
 }
 
 /**
  * Search-first entry point: type any game's name (live Sensor Tower catalog
  * search), pick it, and the page pivots to that game's genre + competitors.
  */
-export function GameSearch({ genres, focusApp, onSelect, onClear }: GameSearchProps) {
+export function GameSearch({ focusApp, onSelect, onClear }: GameSearchProps) {
   const [q, setQ] = useState('');
   const [open, setOpen] = useState(false);
   const [highlighted, setHighlighted] = useState(0);
   const rootRef = useRef<HTMLDivElement>(null);
 
   const { results, searching, error } = useGameSearch(q);
-  const focusGenres = useMemo(
-    () => (focusApp ? matchGenresForGame(focusApp, genres) : []),
-    [focusApp, genres],
-  );
 
   useEffect(() => {
     const onDocClick = (e: MouseEvent) => {
@@ -75,13 +48,6 @@ export function GameSearch({ genres, focusApp, onSelect, onClear }: GameSearchPr
         {focusApp.publisherName && (
           <span className="text-xs text-gray-500 truncate hidden sm:inline">{focusApp.publisherName}</span>
         )}
-        <div className="flex gap-1">
-          {focusGenres.map((g) => (
-            <span key={g.id} className="inline-flex px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-blue-100 text-blue-800">
-              {g.name}
-            </span>
-          ))}
-        </div>
         <button
           type="button"
           onClick={onClear}
@@ -176,9 +142,6 @@ export function GameSearch({ genres, focusApp, onSelect, onClear }: GameSearchPr
                     <span className="min-w-0 flex-1">
                       <span className="block text-sm font-medium text-gray-900 truncate">{app.name}</span>
                       <span className="block text-xs text-gray-500 truncate">{app.publisherName || '—'}</span>
-                    </span>
-                    <span className="flex gap-1 shrink-0">
-                      <GenreChips game={app} genres={genres} />
                     </span>
                   </button>
                 </li>

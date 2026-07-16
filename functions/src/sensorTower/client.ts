@@ -110,6 +110,48 @@ export async function searchUnifiedApps(term: string, authToken: string, limit =
   return items.map(parseSearchItem).filter((a) => a.appId);
 }
 
+/** Store-listing detail used to ground AI competitor discovery. */
+export interface AppStoreDetail {
+  name: string;
+  publisherName: string;
+  subtitle: string | null;
+  description: string | null;
+  categories: string[];
+  lastMonthDownloads: number | null;
+  lastMonthRevenue: number | null;
+  topCountries: string[];
+}
+
+/**
+ * Fetch one app's store-listing detail (description etc.) from Sensor Tower.
+ * iOS is preferred (richer listing); falls back to Android when only that id
+ * exists.
+ */
+export async function fetchAppStoreDetail(
+  os: 'ios' | 'android',
+  storeAppId: string,
+  authToken: string,
+  country = 'US',
+): Promise<AppStoreDetail | null> {
+  const url = `${BASE_URL}/${os}/apps?` +
+    new URLSearchParams({ app_ids: storeAppId, country }).toString();
+  const data = await fetchWithRetry(url, {
+    headers: { Authorization: `Bearer ${authToken}` },
+  });
+  const item = (data?.apps ?? data)?.[0];
+  if (!item) return null;
+  return {
+    name: item.name || item.humanized_name || '',
+    publisherName: item.publisher_name || '',
+    subtitle: item.subtitle || null,
+    description: typeof item.description === 'string' ? item.description : null,
+    categories: (item.categories ?? []).map((c: unknown) => String(c)),
+    lastMonthDownloads: item.humanized_worldwide_last_month_downloads?.downloads ?? null,
+    lastMonthRevenue: item.humanized_worldwide_last_month_revenue?.revenue ?? null,
+    topCountries: Array.isArray(item.top_countries) ? item.top_countries.map(String) : [],
+  };
+}
+
 export interface FetchTopAppsParams {
   authToken: string;
   os: 'unified' | 'ios' | 'android';

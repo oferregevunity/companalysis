@@ -105,5 +105,16 @@ service cloud.firestore {
     match /watchlist/{docId} {
       allow read, write: if isUnityUser();
     }
+
+    // Game workspaces: focused game + curated competitor set. Team-shared.
+    match /gameWorkspaces/{workspaceId} {
+      allow read, write: if isUnityUser();
+    }
+
+    // App+week creative fetch cache markers. Written server-side.
+    match /appCreativeWeeks/{markerId} {
+      allow read: if isUnityUser();
+      allow write: if false;
+    }
   }
 }

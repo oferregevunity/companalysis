@@ -1,7 +1,7 @@
 import { onSchedule } from 'firebase-functions/v2/scheduler';
 import * as admin from 'firebase-admin';
 import { getFirestore } from 'firebase-admin/firestore';
-import { runCreativePipelineForGenre } from '../creativeInsights/runForGenre';
+import { refreshRecentWorkspaces } from '../gameWorkspaces/refreshWorkspaces';
 import { reapStaleCreatives } from '../adIntel/reaper';
 import { fetchAndStoreMonth, fetchAndStoreWeek, getMissingMonths, getMissingWeeks, getLastNWeeks } from '../sensorTower/fetchTopApps';
 import { rebuildGenreAggregate } from '../aggregates/genreAggregate';
@@ -236,28 +236,26 @@ async function runCreativesPhase(): Promise<void> {
   await logRef.update({ creativesPhase: 'running' });
 
   const allErrors: string[] = Array.isArray(data.errors) ? [...data.errors] : [];
-  const genresSnapshot = await db.collection('genres').where('active', '==', true).get();
   const [prevWeek] = getLastNWeeks(1);
 
-  for (const doc of genresSnapshot.docs) {
-    const genre = { id: doc.id, ...doc.data() } as any;
-    if (!genre.enableCreatives) continue;
-    try {
-      const r = await runCreativePipelineForGenre(
-        genre,
-        prevWeek.startDate,
-        prevWeek.endDate,
-        authToken,
-      );
-      console.log(
-        `Creative pipeline ${genre.name}: creatives=${r.creativeCount} scored=${r.scoredCount} insights=${r.insightsGenerated}`,
-      );
-      if (r.partialErrors.length) {
-        allErrors.push(...r.partialErrors.map((e) => `[${genre.name}] ${e}`));
-      }
-    } catch (err) {
-      allErrors.push(`Creatives failed ${genre.name}: ${err instanceof Error ? err.message : err}`);
+  // Game workspaces replaced genre-scoped creative analysis: refresh every
+  // workspace a human touched in the last 30 days for the new week. The
+  // shared app+week cache dedupes overlapping competitor sets.
+  try {
+    const r = await refreshRecentWorkspaces({
+      authToken,
+      weekStart: prevWeek.startDate,
+      weekEnd: prevWeek.endDate,
+      deadlineMs: Date.now() + TIME_BUDGET_MS,
+    });
+    console.log(
+      `Workspace refresh: refreshed=${r.refreshed} skipped=${r.skipped} errors=${r.errors.length}`,
+    );
+    if (r.errors.length > 0) {
+      allErrors.push(...r.errors);
     }
+  } catch (err) {
+    allErrors.push(`Workspace refresh failed: ${err instanceof Error ? err.message : err}`);
   }
 
   try {
