@@ -36,43 +36,6 @@ async function callFunction<T>(path: string, body: Record<string, unknown>): Pro
   return data as T;
 }
 
-export interface TriggerCreativesResult {
-  success: boolean;
-  creativeCount: number;
-  scoredCount: number;
-  insightsGenerated: boolean;
-  partialErrors: string[];
-}
-
-export function triggerCreativesForGenre(
-  genreId: string,
-  weekStart: string,
-  weekEnd: string,
-): Promise<TriggerCreativesResult> {
-  return callFunction<TriggerCreativesResult>('creatives/trigger', { genreId, weekStart, weekEnd });
-}
-
-export interface FetchAppCreativesResult {
-  success: boolean;
-  creativeCount: number;
-  scoredCount: number;
-  partialErrors: string[];
-}
-
-/**
- * Fetches this week's creatives for a single app (e.g. the focused game when
- * it wasn't in the top-N scope), merges them into the genre snapshot, adds
- * the app to the team watchlist, and re-runs statistical scoring.
- */
-export function fetchCreativesForApp(
-  appId: string,
-  genreId: string,
-  weekStart: string,
-  weekEnd: string,
-): Promise<FetchAppCreativesResult> {
-  return callFunction<FetchAppCreativesResult>('creatives/fetch-app', { appId, genreId, weekStart, weekEnd });
-}
-
 /** One unified-app hit from Sensor Tower search (via our `apps/search` proxy). */
 export interface SearchedGame {
   appId: string;
@@ -94,24 +57,75 @@ export function searchGames(term: string): Promise<{ apps: SearchedGame[] }> {
   return callFunction<{ apps: SearchedGame[] }>('apps/search', { term });
 }
 
-export interface ApiCompetitor {
+/** Mirrors `DiscoveredCompetitor` in `functions/src/gameWorkspaces/discovery.ts`. */
+export interface DiscoveredCompetitor {
   appId: string;
   name: string;
   publisherName: string;
   iosAppId: string | null;
   androidAppId: string | null;
   iconUrl: string | null;
-  /** Last complete month's store revenue (USD). */
-  revenue: number;
-  downloads: number;
+  revenue: number | null;
+  downloads: number | null;
+  source: 'ai' | 'category';
+  reason: string | null;
 }
 
-/** Live top-by-revenue competitors for a Sensor Tower category (last complete month). */
-export function fetchCompetitorsForCategory(
-  category: string,
-  opts: { country?: string; excludeAppId?: string; limit?: number } = {},
-): Promise<{ competitors: ApiCompetitor[] }> {
-  return callFunction<{ competitors: ApiCompetitor[] }>('apps/competitors', { category, ...opts });
+/** AI-grounded competitor discovery for a game (Gemini + ST resolve + category backfill). */
+export function discoverCompetitors(
+  game: SearchedGame,
+  country: string,
+): Promise<{ competitors: DiscoveredCompetitor[] }> {
+  return callFunction<{ competitors: DiscoveredCompetitor[] }>('games/discover-competitors', {
+    appId: game.appId,
+    name: game.name,
+    publisherName: game.publisherName,
+    iosAppId: game.iosAppId,
+    androidAppId: game.androidAppId,
+    category: game.gameCategory ?? game.iosCategories[0] ?? null,
+    country,
+  });
+}
+
+/** Mirrors `FetchAppWeekResult` in `functions/src/gameWorkspaces/fetchAppWeek.ts`. */
+export interface FetchAppWeekResult {
+  success: boolean;
+  creativeCount: number;
+  cached: boolean;
+  partialErrors: string[];
+}
+
+/** Fetch one app's creatives for the week (cache-guarded per app+week). */
+export function fetchGameAppCreatives(params: {
+  appId: string;
+  weekStart: string;
+  weekEnd: string;
+  country: string;
+  force?: boolean;
+  name?: string;
+  publisherName?: string | null;
+  iconUrl?: string | null;
+}): Promise<FetchAppWeekResult> {
+  return callFunction<FetchAppWeekResult>('games/fetch-app', params);
+}
+
+/** Mirrors `AnalyzeWorkspaceResult` in `functions/src/gameWorkspaces/analyze.ts`. */
+export interface AnalyzeWorkspaceResult {
+  success: boolean;
+  creativeCount: number;
+  scoredCount: number;
+  insightsGenerated: boolean;
+  geminiError?: string;
+}
+
+/** Score + Gemini-analyze the workspace's creative set (insights land under game_{focusAppId}). */
+export function analyzeGameWorkspace(
+  focusAppId: string,
+  focusName: string,
+  appIds: string[],
+  week: string,
+): Promise<AnalyzeWorkspaceResult> {
+  return callFunction<AnalyzeWorkspaceResult>('games/analyze', { focusAppId, focusName, appIds, week });
 }
 
 export function getWatchlistApps(): Promise<{ appIds: string[] }> {
