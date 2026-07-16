@@ -7,7 +7,7 @@ const LOCATION = 'us-central1';
 
 function getModel() {
   const vertexAI = new VertexAI({ project: PROJECT_ID, location: LOCATION });
-  return vertexAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
+  return vertexAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
 }
 
 /**

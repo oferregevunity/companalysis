@@ -67,9 +67,14 @@ export function AIHighlightsStrip({
       <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
         <h3 className="text-sm font-semibold text-gray-900 mb-2">Genre summary</h3>
         {degraded ? (
-          <p className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-900 border border-amber-100">
-            AI insights unavailable for this run, showing statistical scores only.
-          </p>
+          <div className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-900 border border-amber-100">
+            <p>AI insights unavailable for this run, showing statistical scores only.</p>
+            {insightDoc.geminiError && (
+              <p className="mt-1 text-xs text-amber-700 break-words" title={insightDoc.geminiError}>
+                {insightDoc.geminiError.slice(0, 300)}
+              </p>
+            )}
+          </div>
         ) : (
           <p className="text-sm text-gray-600 leading-relaxed bg-blue-50 p-3 rounded-lg">{insightDoc.summary}</p>
         )}
