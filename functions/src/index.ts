@@ -453,6 +453,73 @@ export const compAnalysisApi = onRequest(
           return;
         }
 
+        case 'games/discover-competitors': {
+          const { appId, name, publisherName, iosAppId, androidAppId, category, country } = req.body || {};
+          if (!appId || typeof appId !== 'string' || !name || typeof name !== 'string') {
+            return sendError(res, 400, 'appId and name (strings) are required');
+          }
+          const { discoverCompetitors } = await import('./gameWorkspaces/discovery');
+          const competitors = await discoverCompetitors({
+            focusAppId: appId,
+            name,
+            publisherName: typeof publisherName === 'string' ? publisherName : '',
+            iosAppId: typeof iosAppId === 'string' ? iosAppId : null,
+            androidAppId: typeof androidAppId === 'string' ? androidAppId : null,
+            category: typeof category === 'string' && category ? category : null,
+            country: typeof country === 'string' && country ? country : 'US',
+            authToken: sensorTowerAuthToken.value().trim(),
+          });
+          return sendSuccess(res, { competitors });
+        }
+
+        case 'games/fetch-app': {
+          const { appId, weekStart, weekEnd, country, force, name, publisherName, iconUrl } = req.body || {};
+          if (!appId || typeof appId !== 'string' || !weekStart || !weekEnd) {
+            return sendError(res, 400, 'appId, weekStart, and weekEnd are required');
+          }
+          const { fetchAppCreativesForWeek } = await import('./gameWorkspaces/fetchAppWeek');
+          const result = await fetchAppCreativesForWeek({
+            appId,
+            country: typeof country === 'string' && country ? country : 'US',
+            weekStart,
+            weekEnd,
+            authToken: sensorTowerAuthToken.value().trim(),
+            force: force === true,
+            ...(typeof name === 'string' && name
+              ? {
+                  appMeta: {
+                    name,
+                    publisherName: typeof publisherName === 'string' ? publisherName : null,
+                    iconUrl: typeof iconUrl === 'string' ? iconUrl : null,
+                  },
+                }
+              : {}),
+          });
+          return sendSuccess(res, result);
+        }
+
+        case 'games/analyze': {
+          const { focusAppId, focusName, appIds, week } = req.body || {};
+          if (
+            !focusAppId ||
+            typeof focusAppId !== 'string' ||
+            !week ||
+            typeof week !== 'string' ||
+            !Array.isArray(appIds) ||
+            appIds.length === 0
+          ) {
+            return sendError(res, 400, 'focusAppId, week, and a non-empty appIds array are required');
+          }
+          const { analyzeGameWorkspace } = await import('./gameWorkspaces/analyze');
+          const result = await analyzeGameWorkspace({
+            focusAppId,
+            focusName: typeof focusName === 'string' && focusName ? focusName : focusAppId,
+            appIds: appIds.filter((a: unknown): a is string => typeof a === 'string' && a.length > 0),
+            week,
+          });
+          return sendSuccess(res, result);
+        }
+
         case 'creatives/trigger': {
           const { genreId, weekStart, weekEnd } = req.body || {};
           if (!genreId || !weekStart || !weekEnd) {
