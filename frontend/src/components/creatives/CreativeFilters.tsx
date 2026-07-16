@@ -6,6 +6,10 @@ export interface Filters {
   networks: Set<QueryableAdNetwork>;
   formats: Set<CreativeFormat>;
   appIds: Set<string>;
+  /** AI hook-type labels (selected from the Hooks & themes panel). */
+  hookTypes: Set<string>;
+  /** Lowercased AI theme tags (selected from the Hooks & themes panel). */
+  themes: Set<string>;
   newThisWeek: boolean;
   winnersOnly: boolean;
   sort: 'score' | 'duration' | 'firstSeen' | 'sov';
@@ -17,6 +21,8 @@ export function defaultFilters(): Filters {
     networks: new Set(),
     formats: new Set(),
     appIds: new Set(),
+    hookTypes: new Set(),
+    themes: new Set(),
     newThisWeek: false,
     winnersOnly: false,
     sort: 'score',
@@ -156,6 +162,36 @@ export function CreativeFilters({
           Reset
         </button>
       </div>
+
+      {(filters.hookTypes.size > 0 || filters.themes.size > 0) && (
+        <div className="flex flex-wrap items-center gap-2 border-t border-gray-100 pt-3">
+          <span className="text-xs font-medium text-gray-500 shrink-0">AI filters</span>
+          {[...filters.hookTypes].map((h) => (
+            <button
+              key={`hook-${h}`}
+              type="button"
+              onClick={() => setFilters((prev) => ({ ...prev, hookTypes: toggleSet(prev.hookTypes, h) }))}
+              className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-[11px] font-medium bg-blue-100 text-blue-800 border border-blue-200"
+              title="Remove hook filter"
+            >
+              {h}
+              <span aria-hidden>×</span>
+            </button>
+          ))}
+          {[...filters.themes].map((t) => (
+            <button
+              key={`theme-${t}`}
+              type="button"
+              onClick={() => setFilters((prev) => ({ ...prev, themes: toggleSet(prev.themes, t) }))}
+              className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-[11px] font-medium bg-violet-100 text-violet-800 border border-violet-200"
+              title="Remove theme filter"
+            >
+              {t}
+              <span aria-hidden>×</span>
+            </button>
+          ))}
+        </div>
+      )}
 
       {appOptions.length > 0 && (
         <div className="flex flex-wrap items-center gap-2 border-t border-gray-100 pt-3">

@@ -1,6 +1,6 @@
 // functions/src/creativeInsights/geminiClient.test.ts
 import { describe, it, expect } from 'vitest';
-import { buildCreativePrompt, parseCreativeResponse } from './geminiClient';
+import { buildCreativePrompt, parseCreativeResponse, HOOK_TYPES } from './geminiClient';
 
 describe('buildCreativePrompt', () => {
   it('includes genre, week, each winner id, networks, and sub-scores', () => {
@@ -35,6 +35,35 @@ describe('buildCreativePrompt', () => {
     expect(p).toContain('TikTok');
     expect(p).toContain('72');
     expect(p).toContain('app-1__ph-1');
+  });
+
+  it('includes the hook taxonomy and ad text when present', () => {
+    const p = buildCreativePrompt({
+      genreName: 'Puzzle',
+      week: '2026-W16',
+      winners: [
+        {
+          creativeId: 'a__c',
+          appId: 'a',
+          appName: 'A',
+          publisherName: 'P',
+          networks: ['TikTok'],
+          format: 'video',
+          durationDays: 5,
+          firstSeen: '2026-04-01',
+          score: 70,
+          subScores: { longevity: 10, networkBreadth: 5, impressionMomentum: 10, freshnessAdjustedPersistence: 10 },
+          title: 'Can you beat level 3?',
+          message: 'Only 2% pass this',
+        },
+      ],
+      conceptCandidates: [],
+      watchCandidates: [],
+    });
+    for (const h of HOOK_TYPES) expect(p).toContain(h);
+    expect(p).toContain('Can you beat level 3?');
+    expect(p).toContain('Only 2% pass this');
+    expect(p).toContain('creativeTags');
   });
 
   it('lists concept candidates and watch candidates separately', () => {
@@ -90,5 +119,28 @@ describe('parseCreativeResponse', () => {
     expect(parsed.winners).toEqual([]);
     expect(parsed.emergingConcepts).toEqual([]);
     expect(parsed.watchList).toEqual([]);
+    expect(parsed.creativeTags).toEqual([]);
+  });
+
+  it('parses creativeTags, coercing unknown hook types to Other and capping themes', () => {
+    const parsed = parseCreativeResponse(
+      JSON.stringify({
+        summary: '',
+        winners: [],
+        emergingConcepts: [],
+        watchList: [],
+        creativeTags: [
+          { creativeId: 'c1', hookType: 'Fail & Frustration', themes: ['rage bait', 'level 10'] },
+          { creativeId: 'c2', hookType: 'Something Made Up', themes: ['a', 'b', 'c', 'd', 'e'] },
+          { creativeId: '', hookType: 'Other', themes: [] },
+          { creativeId: 'c3', hookType: 'Satisfying / ASMR', themes: 'not-an-array' },
+        ],
+      }),
+    );
+    expect(parsed.creativeTags).toHaveLength(3);
+    expect(parsed.creativeTags[0]).toEqual({ creativeId: 'c1', hookType: 'Fail & Frustration', themes: ['rage bait', 'level 10'] });
+    expect(parsed.creativeTags[1].hookType).toBe('Other');
+    expect(parsed.creativeTags[1].themes).toHaveLength(4);
+    expect(parsed.creativeTags[2]).toEqual({ creativeId: 'c3', hookType: 'Satisfying / ASMR', themes: [] });
   });
 });

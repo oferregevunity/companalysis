@@ -54,6 +54,7 @@ export function CreativeDetailModal({
   const winner = insightDoc?.winners.find((w) => w.creativeId === creative.docId);
   const watch = insightDoc?.watchList.find((w) => w.creativeId === creative.docId);
   const aiText = winner?.explanation ?? watch?.reason ?? null;
+  const tag = insightDoc?.creativeTags?.find((t) => t.creativeId === creative.docId);
 
   const sub = creative.subScores ?? {
     longevity: 0,
@@ -150,6 +151,25 @@ export function CreativeDetailModal({
             <SubScoreBar label="Impression momentum" value={sub.impressionMomentum} />
             <SubScoreBar label="Freshness-adjusted persistence" value={sub.freshnessAdjustedPersistence} />
           </div>
+
+          {tag && (
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className="text-xs font-medium text-gray-500">Hook</span>
+              <span className="inline-flex px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                {tag.hookType}
+              </span>
+              {tag.themes.length > 0 && (
+                <>
+                  <span className="text-xs font-medium text-gray-500 ml-2">Themes</span>
+                  {tag.themes.map((t) => (
+                    <span key={t} className="inline-flex px-2 py-0.5 rounded-full text-xs font-medium bg-violet-100 text-violet-800">
+                      {t}
+                    </span>
+                  ))}
+                </>
+              )}
+            </div>
+          )}
 
           <div className="rounded-lg bg-gray-50 p-3 text-sm text-gray-700">
             {aiText ?? 'No AI explanation for this creative.'}

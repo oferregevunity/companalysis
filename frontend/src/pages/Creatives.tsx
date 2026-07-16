@@ -3,10 +3,14 @@ import { useGenres } from '../hooks/useGenres';
 import { useCreativeInsights } from '../hooks/useCreativeInsights';
 import { useCreativesForGenre } from '../hooks/useCreativesForGenre';
 import { useGenreDataStatus } from '../hooks/useGenreDataStatus';
+import { useTrackedApps, type TrackedApp } from '../hooks/useTrackedApps';
 import { getCreativeWeekBounds, getLatestCreativeWeek } from '../lib/creativesWeek';
 import { triggerCreativesForGenre } from '../lib/creativesApi';
 import { AIHighlightsStrip } from '../components/creatives/AIHighlightsStrip';
 import { CreativeGallery } from '../components/creatives/CreativeGallery';
+import { GameSearch } from '../components/creatives/GameSearch';
+import { CompetitorStrip } from '../components/creatives/CompetitorStrip';
+import { HookThemePanel } from '../components/creatives/HookThemePanel';
 import {
   buildAppOptions,
   CreativeFilters,
@@ -15,10 +19,11 @@ import {
 } from '../components/creatives/CreativeFilters';
 import { CreativeDetailModal } from '../components/creatives/CreativeDetailModal';
 import { useAppNames, type AppNameMapEntry } from '../hooks/useAppNames';
-import type { CreativeFormat, QueryableAdNetwork } from '../types/creatives';
+import type { CreativeFormat, CreativeTag, QueryableAdNetwork } from '../types/creatives';
 import type { JoinedCreative } from '../hooks/useCreativesForGenre';
 
 const STORAGE_KEY = 'creatives.selectedGenreId';
+const FOCUS_APP_KEY = 'creatives.focusAppId';
 
 function generatedAtToDate(
   v: { seconds: number; nanoseconds: number } | Date | { toDate: () => Date } | undefined | null,
@@ -51,6 +56,22 @@ function formatRelativeOrDash(d: Date | null | undefined): string {
 function parseSeenMs(s: string): number | null {
   const t = Date.parse(s);
   return Number.isNaN(t) ? null : t;
+}
+
+/** Filters by AI hook/theme tags; creatives without a tag never match an active tag filter. */
+function applyTagFilters(
+  list: JoinedCreative[],
+  filters: Pick<Filters, 'hookTypes' | 'themes'>,
+  tagMap: Map<string, CreativeTag>,
+): JoinedCreative[] {
+  if (filters.hookTypes.size === 0 && filters.themes.size === 0) return list;
+  return list.filter((c) => {
+    const tag = tagMap.get(c.docId);
+    if (!tag) return false;
+    if (filters.hookTypes.size > 0 && !filters.hookTypes.has(tag.hookType)) return false;
+    if (filters.themes.size > 0 && !tag.themes.some((t) => filters.themes.has(t.trim().toLowerCase()))) return false;
+    return true;
+  });
 }
 
 function applyCreativeFilters(
@@ -121,6 +142,13 @@ function applyCreativeFilters(
 export default function Creatives() {
   const { genres, loading: genresLoading } = useGenres();
   const [selectedGenreId, setSelectedGenreId] = useState<string>('');
+  const [focusAppId, setFocusAppId] = useState<string | null>(() => {
+    try {
+      return localStorage.getItem(FOCUS_APP_KEY);
+    } catch {
+      return null;
+    }
+  });
   const [generating, setGenerating] = useState(false);
   const [reanalyzeError, setReanalyzeError] = useState<string | null>(null);
   const [reanalyzeSuccess, setReanalyzeSuccess] = useState<string | null>(null);
@@ -128,6 +156,12 @@ export default function Creatives() {
   const [detailDocId, setDetailDocId] = useState<string | null>(null);
 
   const latestWeek = useMemo(() => getLatestCreativeWeek(), []);
+
+  const { apps: trackedApps, loading: trackedAppsLoading } = useTrackedApps(genres);
+  const focusApp = useMemo(
+    () => (focusAppId ? trackedApps.find((a) => a.appId === focusAppId) ?? null : null),
+    [trackedApps, focusAppId],
+  );
 
   useEffect(() => {
     if (genres.length === 0) return;
@@ -143,12 +177,58 @@ export default function Creatives() {
     setSelectedGenreId(genres[0].id);
   }, [genres]);
 
-  const selectGenre = useCallback((id: string) => {
-    setSelectedGenreId(id);
-    setReanalyzeError(null);
-    setReanalyzeSuccess(null);
+  const selectGenre = useCallback(
+    (id: string) => {
+      setSelectedGenreId(id);
+      setReanalyzeError(null);
+      setReanalyzeSuccess(null);
+      setFilters((prev) => ({ ...prev, appIds: new Set(), hookTypes: new Set(), themes: new Set() }));
+      // Manually browsing to a genre the focused game isn't in drops the focus.
+      if (focusApp && !focusApp.genreIds.includes(id)) {
+        setFocusAppId(null);
+        try {
+          localStorage.removeItem(FOCUS_APP_KEY);
+        } catch {
+          /* ignore */
+        }
+      }
+      try {
+        localStorage.setItem(STORAGE_KEY, id);
+      } catch {
+        /* ignore */
+      }
+    },
+    [focusApp],
+  );
+
+  const selectFocusApp = useCallback(
+    (app: TrackedApp) => {
+      setFocusAppId(app.appId);
+      try {
+        localStorage.setItem(FOCUS_APP_KEY, app.appId);
+      } catch {
+        /* ignore */
+      }
+      // Pivot the page to the game's genre (keep the current one when it applies).
+      setFilters((prev) => ({ ...prev, appIds: new Set(), hookTypes: new Set(), themes: new Set() }));
+      setSelectedGenreId((cur) => {
+        const next = app.genreIds.includes(cur) ? cur : app.genreIds[0] ?? cur;
+        try {
+          localStorage.setItem(STORAGE_KEY, next);
+        } catch {
+          /* ignore */
+        }
+        return next;
+      });
+    },
+    [],
+  );
+
+  const clearFocusApp = useCallback(() => {
+    setFocusAppId(null);
+    setFilters((prev) => ({ ...prev, appIds: new Set() }));
     try {
-      localStorage.setItem(STORAGE_KEY, id);
+      localStorage.removeItem(FOCUS_APP_KEY);
     } catch {
       /* ignore */
     }
@@ -170,7 +250,31 @@ export default function Creatives() {
     return m;
   }, [insightDoc]);
 
-  const appIds = useMemo(() => joinedCreatives.map((c) => c.appId), [joinedCreatives]);
+  const tagMap = useMemo(() => {
+    const m = new Map<string, CreativeTag>();
+    for (const t of insightDoc?.creativeTags ?? []) {
+      m.set(t.creativeId, t);
+    }
+    return m;
+  }, [insightDoc]);
+
+  // Competitors: everyone else tracked in the focused game's genre, by revenue.
+  const competitors = useMemo(() => {
+    if (!focusApp || !selectedGenreId) return [];
+    return trackedApps
+      .filter((a) => a.appId !== focusApp.appId && a.genreIds.includes(selectedGenreId))
+      .sort((a, b) => b.latestRevenue - a.latestRevenue)
+      .slice(0, 40);
+  }, [trackedApps, focusApp, selectedGenreId]);
+
+  const appIds = useMemo(() => {
+    const ids = joinedCreatives.map((c) => c.appId);
+    if (focusApp) {
+      ids.push(focusApp.appId);
+      for (const c of competitors.slice(0, 16)) ids.push(c.appId);
+    }
+    return ids;
+  }, [joinedCreatives, focusApp, competitors]);
   const appNames = useAppNames(appIds);
 
   const availableNetworks = useMemo(() => {
@@ -196,10 +300,43 @@ export default function Creatives() {
     [joinedCreatives, appNames],
   );
 
-  const filteredCreatives = useMemo(
+  /** Everything except hook/theme filters — feeds the Hooks & themes panel so its counts stay stable. */
+  const baseFilteredCreatives = useMemo(
     () => applyCreativeFilters(joinedCreatives, filters, appNames),
     [joinedCreatives, filters, appNames],
   );
+
+  const filteredCreatives = useMemo(
+    () => applyTagFilters(baseFilteredCreatives, filters, tagMap),
+    [baseFilteredCreatives, filters, tagMap],
+  );
+
+  const toggleAppFilter = useCallback((appId: string) => {
+    setFilters((prev) => {
+      const next = new Set(prev.appIds);
+      if (next.has(appId)) next.delete(appId);
+      else next.add(appId);
+      return { ...prev, appIds: next };
+    });
+  }, []);
+
+  const toggleHookType = useCallback((hook: string) => {
+    setFilters((prev) => {
+      const next = new Set(prev.hookTypes);
+      if (next.has(hook)) next.delete(hook);
+      else next.add(hook);
+      return { ...prev, hookTypes: next };
+    });
+  }, []);
+
+  const toggleTheme = useCallback((theme: string) => {
+    setFilters((prev) => {
+      const next = new Set(prev.themes);
+      if (next.has(theme)) next.delete(theme);
+      else next.add(theme);
+      return { ...prev, themes: next };
+    });
+  }, []);
 
   const detailCreative = useMemo(
     () => (detailDocId ? joinedCreatives.find((c) => c.docId === detailDocId) ?? null : null),
@@ -291,7 +428,21 @@ export default function Creatives() {
         </div>
       </div>
 
-      <div className="flex flex-wrap gap-2">
+      <GameSearch
+        apps={trackedApps}
+        genres={genres}
+        loading={trackedAppsLoading}
+        focusApp={focusApp}
+        onSelect={selectFocusApp}
+        onClear={clearFocusApp}
+      />
+
+      <div className="flex flex-wrap items-center gap-2">
+        {!genresLoading && genres.length > 0 && (
+          <span className="text-xs font-medium text-gray-400 mr-1">
+            {focusApp ? 'Genre' : 'Or browse by genre'}
+          </span>
+        )}
         {genresLoading ? (
           <span className="text-sm text-gray-400">Loading genres…</span>
         ) : (
@@ -312,11 +463,33 @@ export default function Creatives() {
         )}
       </div>
 
+      {focusApp && selectedGenreId && focusApp.genreIds.includes(selectedGenreId) && (
+        <CompetitorStrip
+          focusApp={focusApp}
+          competitors={competitors}
+          creatives={joinedCreatives}
+          appNames={appNames}
+          selectedAppIds={filters.appIds}
+          onToggleApp={toggleAppFilter}
+          onShowAll={() => setFilters((prev) => ({ ...prev, appIds: new Set() }))}
+        />
+      )}
+
       <AIHighlightsStrip
         insightDoc={insightDoc}
         joinedCreatives={joinedCreatives}
         loading={insightLoading}
         onScrollToCreative={onScrollToCreative}
+      />
+
+      <HookThemePanel
+        tagMap={tagMap}
+        creatives={baseFilteredCreatives}
+        selectedHookTypes={filters.hookTypes}
+        selectedThemes={filters.themes}
+        onToggleHookType={toggleHookType}
+        onToggleTheme={toggleTheme}
+        hasInsightDoc={insightDoc != null}
       />
 
       {creativesLoading ? (
@@ -339,6 +512,7 @@ export default function Creatives() {
               creatives={filteredCreatives}
               rankMap={rankMap}
               appNames={appNames}
+              tagMap={tagMap}
               onOpen={setDetailDocId}
             />
           )}

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import type { JoinedCreative } from '../../hooks/useCreativesForGenre';
-import type { CreativeFormat, QueryableAdNetwork } from '../../types/creatives';
+import type { CreativeFormat, CreativeTag, QueryableAdNetwork } from '../../types/creatives';
 import type { AppNameMapEntry } from '../../hooks/useAppNames';
 
 const PLACEHOLDER_SVG =
@@ -25,10 +25,11 @@ export interface CreativeTileProps {
   creative: JoinedCreative;
   rankBadge?: number;
   appEntry?: AppNameMapEntry;
+  tag?: CreativeTag;
   onOpen: (docId: string) => void;
 }
 
-export function CreativeTile({ creative, rankBadge, appEntry, onOpen }: CreativeTileProps) {
+export function CreativeTile({ creative, rankBadge, appEntry, tag, onOpen }: CreativeTileProps) {
   const displayName = appEntry?.name ?? creative.appId;
   const publisher = appEntry?.publisherName?.trim();
 
@@ -120,9 +121,19 @@ export function CreativeTile({ creative, rankBadge, appEntry, onOpen }: Creative
             </span>
           ))}
         </div>
-        <span className="inline-flex px-1.5 py-0.5 rounded text-[10px] font-medium bg-slate-100 text-slate-700">
-          {formatChipLabel(creative.format)}
-        </span>
+        <div className="flex flex-wrap gap-1">
+          <span className="inline-flex px-1.5 py-0.5 rounded text-[10px] font-medium bg-slate-100 text-slate-700">
+            {formatChipLabel(creative.format)}
+          </span>
+          {tag && (
+            <span
+              className="inline-flex px-1.5 py-0.5 rounded text-[10px] font-medium bg-blue-50 text-blue-700 max-w-full truncate"
+              title={tag.themes.length > 0 ? `Themes: ${tag.themes.join(', ')}` : undefined}
+            >
+              {tag.hookType}
+            </span>
+          )}
+        </div>
         <p className="text-sm font-medium text-gray-900 leading-snug line-clamp-2">{displayName}</p>
         {publisher ? <p className="text-xs text-gray-500 truncate">{publisher}</p> : null}
         <p className="text-xs text-gray-500">

@@ -85,6 +85,30 @@ export interface CreativeScoreRow {
   computedAt?: Timestamp | { seconds: number; nanoseconds: number } | string;
 }
 
+/** Mirrors `HOOK_TYPES` in `functions/src/creativeInsights/geminiClient.ts`. */
+export const HOOK_TYPES = [
+  'Fail & Frustration',
+  'Satisfying / ASMR',
+  'Challenge / Can You Beat',
+  'Narrative / Story',
+  'Tutorial / How-To',
+  'UGC / Reaction',
+  'Before & After',
+  'Gameplay Showcase',
+  'Reward / Progression',
+  'Comparison / VS',
+  'Other',
+] as const;
+
+export type HookType = (typeof HOOK_TYPES)[number];
+
+/** Per-creative AI classification. `creativeId` is a docId (`appId__creativeKey`). */
+export interface CreativeTag {
+  creativeId: CreativeDocId;
+  hookType: HookType;
+  themes: string[];
+}
+
 /**
  * Mirrors `CreativeInsightDoc` in `functions/src/creativeInsights/pipeline.ts`.
  * `winners[].creativeId` / `watchList[].creativeId` are docIds (`appId__creativeKey`).
@@ -115,6 +139,8 @@ export interface CreativeInsightDoc {
     score: number;
     reason: string;
   }>;
+  /** Absent on docs generated before hook/theme classification shipped. */
+  creativeTags?: CreativeTag[];
   geminiError?: string;
 }
 

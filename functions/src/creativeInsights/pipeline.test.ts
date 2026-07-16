@@ -72,6 +72,10 @@ describe('generateAndStoreCreativeInsightsWithDeps', () => {
       winners: topWinners.map(s => ({ creativeId: s.docId, explanation: `why ${s.docId} wins` })),
       emergingConcepts: [{ title: 'merge hooks', description: 'd', exampleCreativeIds: ['app-12__ck-12'] }],
       watchList: [{ creativeId: 'app-34__ck-34', reason: 'climbing' }],
+      creativeTags: [
+        { creativeId: topWinners[0].docId, hookType: 'Fail & Frustration', themes: ['rage bait'] },
+        { creativeId: 'not-a-sent-id__x', hookType: 'Other', themes: [] },
+      ],
     });
     const writes: any[] = [];
 
@@ -114,6 +118,10 @@ describe('generateAndStoreCreativeInsightsWithDeps', () => {
     expect(doc.winners[0].explanation).toContain('why');
     expect(doc.winners[0].appName).toMatch(/^App app-/);
     expect(doc.winners[0].subScores).toBeDefined();
+    // Tags for creatives we sent are kept; hallucinated ids are dropped.
+    expect(doc.creativeTags).toEqual([
+      { creativeId: topWinners[0].docId, hookType: 'Fail & Frustration', themes: ['rage bait'] },
+    ]);
   });
 
   it('falls back to "Unknown app" when appNames is missing', async () => {
