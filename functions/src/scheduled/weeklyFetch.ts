@@ -5,6 +5,7 @@ import { runCreativePipelineForGenre } from '../creativeInsights/runForGenre';
 import { reapStaleCreatives } from '../adIntel/reaper';
 import { fetchAndStoreMonth, fetchAndStoreWeek, getMissingMonths, getMissingWeeks, getLastNWeeks } from '../sensorTower/fetchTopApps';
 import { rebuildGenreAggregate } from '../aggregates/genreAggregate';
+import { runAllGenreInsights } from '../insights/pipeline';
 import { sensorTowerAuthToken } from '../sensorTower/client';
 import { weeklyScheduledRunDocId } from './weeklyRunId';
 
@@ -157,6 +158,27 @@ export const weeklyFetchApps = onSchedule(
       console.log(
         `weeklyFetchApps complete for ${weeklyId}. Processed: ${allProcessed.join(', ')}. Errors: ${allErrors.length}`,
       );
+
+      // All genres now have fresh data — regenerate Rising Star insights for
+      // both granularities. runAllGenreInsights refreshes each genre's
+      // insight doc (incl. within-genre game ideas) and, across all genres,
+      // writes the crossGenreInsights/{granularity} synthesis. Wrapped so a
+      // failure here never fails the fetch job (which is already marked done).
+      try {
+        for (const gran of ['month', 'week'] as const) {
+          const { genresProcessed, errors } = await runAllGenreInsights(gran);
+          console.log(
+            `weekly insights (${gran}): ${genresProcessed.length} genres, ${errors.length} errors`,
+          );
+          if (errors.length > 0) {
+            await logRef.update({ errors: admin.firestore.FieldValue.arrayUnion(...errors) });
+          }
+        }
+      } catch (err) {
+        const msg = `Weekly insights generation failed: ${err instanceof Error ? err.message : err}`;
+        console.error(msg);
+        await logRef.update({ errors: admin.firestore.FieldValue.arrayUnion(msg) });
+      }
     } catch (e) {
       const current = await logRef.get();
       if (current.data()?.appsPhase === 'partial') {

@@ -1,6 +1,6 @@
 import type { CreativeFormat, QueryableAdNetwork } from '../adIntel/types';
 import type { StoredCreative } from '../adIntel/fetchCreativesForGenre';
-import type { BuildPromptInput, ParsedCreativeResponse } from './geminiClient';
+import type { BuildPromptInput, CreativeTag, ParsedCreativeResponse } from './geminiClient';
 import type { CreativeScoreRow } from './scoringPipeline';
 import type { SubScores } from './scoringEngine';
 
@@ -26,6 +26,8 @@ export interface CreativeInsightDoc {
     score: number;
     reason: string;
   }>;
+  /** Per-creative hook/theme classification (winners + concept candidates). */
+  creativeTags: CreativeTag[];
   geminiError?: string;
 }
 
@@ -93,6 +95,8 @@ function toWinnerInput(
     firstSeen: c?.firstSeen ?? '',
     score: row.score,
     subScores: row.subScores,
+    title: c?.title ?? null,
+    message: c?.message ?? null,
   };
 }
 
@@ -109,6 +113,8 @@ function toCandidateInput(
     format: (c?.format ?? 'unknown') as CreativeFormat,
     networks: (c?.networks ?? []) as QueryableAdNetwork[],
     score: row.score,
+    title: c?.title ?? null,
+    message: c?.message ?? null,
   };
 }
 
@@ -128,6 +134,7 @@ function emptyDocBase(deps: {
     winners: [],
     emergingConcepts: [],
     watchList: [],
+    creativeTags: [],
     generatedAt: generatedAtFromDate(deps.now),
   };
 }
@@ -210,6 +217,10 @@ export async function generateAndStoreCreativeInsightsWithDeps(
     };
   });
 
+  // Only keep tags for creatives we actually sent to the model.
+  const sentIds = new Set([...winnerRows, ...conceptRows].map(r => r.docId));
+  const creativeTags = (parsed.creativeTags ?? []).filter(t => sentIds.has(t.creativeId));
+
   const doc: CreativeInsightDoc = {
     genreId,
     week,
@@ -217,6 +228,7 @@ export async function generateAndStoreCreativeInsightsWithDeps(
     winners: docWinners,
     emergingConcepts: parsed.emergingConcepts,
     watchList,
+    creativeTags,
     generatedAt: generatedAtFromDate(now),
   };
 

@@ -10,6 +10,32 @@ function getModel() {
   return vertexAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
 }
 
+/**
+ * Fixed UA hook taxonomy. Gemini must pick one per creative; anything else is
+ * coerced to 'Other' at parse time so the frontend can rely on the set.
+ */
+export const HOOK_TYPES = [
+  'Fail & Frustration',
+  'Satisfying / ASMR',
+  'Challenge / Can You Beat',
+  'Narrative / Story',
+  'Tutorial / How-To',
+  'UGC / Reaction',
+  'Before & After',
+  'Gameplay Showcase',
+  'Reward / Progression',
+  'Comparison / VS',
+  'Other',
+] as const;
+
+export type HookType = (typeof HOOK_TYPES)[number];
+
+export interface CreativeTag {
+  creativeId: string;
+  hookType: HookType;
+  themes: string[];
+}
+
 export interface CreativeWinnerInput {
   creativeId: string; // caller may use docId (`${appId}__${creativeKey}`)
   appId: string;
@@ -21,6 +47,8 @@ export interface CreativeWinnerInput {
   firstSeen: string;
   score: number;
   subScores: SubScores;
+  title?: string | null;
+  message?: string | null;
 }
 
 export interface CreativeCandidateInput {
@@ -30,6 +58,8 @@ export interface CreativeCandidateInput {
   format: CreativeFormat;
   networks: QueryableAdNetwork[];
   score: number;
+  title?: string | null;
+  message?: string | null;
 }
 
 export interface BuildPromptInput {
@@ -45,25 +75,33 @@ export interface ParsedCreativeResponse {
   winners: Array<{ creativeId: string; explanation: string }>;
   emergingConcepts: Array<{ title: string; description: string; exampleCreativeIds: string[] }>;
   watchList: Array<{ creativeId: string; reason: string }>;
+  creativeTags: CreativeTag[];
+}
+
+function adTextSuffix(title?: string | null, message?: string | null): string {
+  const parts: string[] = [];
+  if (title?.trim()) parts.push(`title="${title.trim().slice(0, 120)}"`);
+  if (message?.trim()) parts.push(`text="${message.trim().slice(0, 200)}"`);
+  return parts.length > 0 ? ` ${parts.join(' ')}` : '';
 }
 
 export function buildCreativePrompt(input: BuildPromptInput): string {
   const winnerLines = input.winners
     .map(
       (w, i) =>
-        `#${i + 1} ${w.creativeId} — app=${w.appName} (${w.publisherName}) fmt=${w.format} networks=[${w.networks.join(', ')}] score=${w.score}/100 sub=[L=${w.subScores.longevity}, NB=${w.subScores.networkBreadth}, IM=${w.subScores.impressionMomentum}, FAP=${w.subScores.freshnessAdjustedPersistence}] firstSeen=${w.firstSeen} dur=${w.durationDays}d`,
+        `#${i + 1} ${w.creativeId} — app=${w.appName} (${w.publisherName}) fmt=${w.format} networks=[${w.networks.join(', ')}] score=${w.score}/100 sub=[L=${w.subScores.longevity}, NB=${w.subScores.networkBreadth}, IM=${w.subScores.impressionMomentum}, FAP=${w.subScores.freshnessAdjustedPersistence}] firstSeen=${w.firstSeen} dur=${w.durationDays}d${adTextSuffix(w.title, w.message)}`,
     )
     .join('\n');
   const conceptLines = input.conceptCandidates
     .map(
       c =>
-        `- ${c.creativeId} — app=${c.appName} fmt=${c.format} networks=[${c.networks.join(', ')}] score=${c.score}`,
+        `- ${c.creativeId} — app=${c.appName} fmt=${c.format} networks=[${c.networks.join(', ')}] score=${c.score}${adTextSuffix(c.title, c.message)}`,
     )
     .join('\n');
   const watchLines = input.watchCandidates
     .map(
       c =>
-        `- ${c.creativeId} — app=${c.appName} fmt=${c.format} networks=[${c.networks.join(', ')}] score=${c.score}`,
+        `- ${c.creativeId} — app=${c.appName} fmt=${c.format} networks=[${c.networks.join(', ')}] score=${c.score}${adTextSuffix(c.title, c.message)}`,
     )
     .join('\n');
 
@@ -78,6 +116,9 @@ ${conceptLines || '(none)'}
 WATCH LIST (creatives to monitor):
 ${watchLines || '(none)'}
 
+HOOK TYPE TAXONOMY (use exactly one of these labels per creative):
+${HOOK_TYPES.join(' | ')}
+
 Respond in valid JSON with NO markdown fences, using EXACTLY this schema:
 {
   "summary": "2-3 sentence summary of the week's creative trends",
@@ -89,14 +130,22 @@ Respond in valid JSON with NO markdown fences, using EXACTLY this schema:
   ],
   "watchList": [
     { "creativeId": "<one of WATCH LIST ids>", "reason": "1 sentence why it is worth monitoring" }
+  ],
+  "creativeTags": [
+    { "creativeId": "<any id from WINNERS or CONCEPT CANDIDATES>", "hookType": "<one taxonomy label>", "themes": ["1-3 short theme tags, e.g. 'home renovation', 'boss fight', 'jackpot win'"] }
   ]
 }
 
-Ground every claim in the data provided. Do not invent networks, durations, or scores.`;
+Tag EVERY winner and concept candidate in creativeTags, inferring the hook from the app, format, networks, and any ad title/text provided. Ground every claim in the data provided. Do not invent networks, durations, or scores.`;
+}
+
+function coerceHookType(v: unknown): HookType {
+  const s = String(v ?? '').trim();
+  return (HOOK_TYPES as readonly string[]).includes(s) ? (s as HookType) : 'Other';
 }
 
 export function parseCreativeResponse(raw: string): ParsedCreativeResponse {
-  const empty: ParsedCreativeResponse = { summary: '', winners: [], emergingConcepts: [], watchList: [] };
+  const empty: ParsedCreativeResponse = { summary: '', winners: [], emergingConcepts: [], watchList: [], creativeTags: [] };
   try {
     const cleaned = raw.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '');
     const obj = JSON.parse(cleaned) as Record<string, unknown>;
@@ -116,6 +165,13 @@ export function parseCreativeResponse(raw: string): ParsedCreativeResponse {
         creativeId: String(w.creativeId ?? ''),
         reason: String(w.reason ?? ''),
       })),
+      creativeTags: asArr<{ creativeId?: unknown; hookType?: unknown; themes?: unknown }>(obj.creativeTags)
+        .filter(t => t && String(t.creativeId ?? '').length > 0)
+        .map(t => ({
+          creativeId: String(t.creativeId),
+          hookType: coerceHookType(t.hookType),
+          themes: Array.isArray(t.themes) ? t.themes.map(String).filter(Boolean).slice(0, 4) : [],
+        })),
     };
   } catch {
     return empty;
@@ -137,6 +193,7 @@ export async function generateCreativeInsights(
       winners: [],
       emergingConcepts: [],
       watchList: [],
+      creativeTags: [],
       geminiError: err instanceof Error ? err.message : String(err),
     };
   }

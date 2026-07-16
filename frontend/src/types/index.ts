@@ -103,6 +103,14 @@ export interface InsightCorrelations {
   analysis: string;
 }
 
+export interface InsightGameIdea {
+  title: string;
+  hook: string;
+  coreLoop: string;
+  monetization: string;
+  inspiredBy: string[];
+}
+
 export interface GenreInsightDoc {
   genreId: string;
   period: string;
@@ -112,4 +120,19 @@ export interface GenreInsightDoc {
   games: InsightGame[];
   watchList: InsightWatchItem[];
   correlations?: InsightCorrelations;
+  newGameIdeas?: InsightGameIdea[];
+}
+
+export interface CrossGenreConcept {
+  concept: string;
+  genres: string[];
+}
+
+export interface CrossGenreInsightDoc {
+  granularity: 'month' | 'week';
+  generatedAt: Date;
+  genresAnalyzed: string[];
+  repeatedConcepts: CrossGenreConcept[];
+  analysis: string;
+  newGameIdeas: InsightGameIdea[];
 }

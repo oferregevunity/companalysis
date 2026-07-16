@@ -1,15 +1,17 @@
 import type { JoinedCreative } from '../../hooks/useCreativesForGenre';
 import type { AppNameMapEntry } from '../../hooks/useAppNames';
+import type { CreativeTag } from '../../types/creatives';
 import { CreativeTile } from './CreativeTile';
 
 export interface CreativeGalleryProps {
   creatives: JoinedCreative[];
   rankMap: Map<string, number>;
   appNames: Map<string, AppNameMapEntry>;
+  tagMap?: Map<string, CreativeTag>;
   onOpen: (docId: string) => void;
 }
 
-export function CreativeGallery({ creatives, rankMap, appNames, onOpen }: CreativeGalleryProps) {
+export function CreativeGallery({ creatives, rankMap, appNames, tagMap, onOpen }: CreativeGalleryProps) {
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
       {creatives.map((c) => (
@@ -18,6 +20,7 @@ export function CreativeGallery({ creatives, rankMap, appNames, onOpen }: Creati
           creative={c}
           rankBadge={rankMap.get(c.docId)}
           appEntry={appNames.get(c.appId)}
+          tag={tagMap?.get(c.docId)}
           onOpen={onOpen}
         />
       ))}
