@@ -57,6 +57,23 @@ export const compAnalysisApi = onRequest(
 
     try {
       switch (path) {
+        case 'genres/list': {
+          const snap = await db.collection('genres').get();
+          const genres = snap.docs.map((d) => {
+            const data = d.data() as Record<string, unknown>;
+            return {
+              id: d.id,
+              name: typeof data.name === 'string' ? data.name : d.id,
+              active: data.active === true,
+              enableCreatives: data.enableCreatives === true,
+              marketPulse: data.marketPulse === true,
+              categoryIds: data.categoryIds ?? null,
+              country: typeof data.country === 'string' ? data.country : null,
+            };
+          });
+          return sendSuccess(res, { genres });
+        }
+
         case 'genres/add': {
           const { name, categoryIds, country, monthsBack } = req.body;
           if (!name || !categoryIds?.ios || !categoryIds?.android) {
