@@ -19,6 +19,7 @@ export interface CompetitorRailProps {
   galleryAppIds: Set<string>;
   onToggleSelected: (appId: string) => void;
   onToggleGalleryApp: (appId: string) => void;
+  onRemoveCompetitor: (appId: string) => void;
   onShowAllCreatives: () => void;
   onAddCompetitor: (game: SearchedGame) => void;
   onCountryChange: (country: string) => void;
@@ -80,6 +81,7 @@ function CompetitorCard({
   inGalleryFilter,
   onToggleSelected,
   onToggleGalleryApp,
+  onRemove,
 }: {
   app: DiscoveredCompetitor;
   isFocus: boolean;
@@ -91,10 +93,11 @@ function CompetitorCard({
   inGalleryFilter: boolean;
   onToggleSelected: () => void;
   onToggleGalleryApp: () => void;
+  onRemove?: () => void;
 }) {
   return (
     <div
-      className={`flex w-48 shrink-0 flex-col gap-1.5 rounded-xl border p-3 transition-colors ${
+      className={`group relative flex w-48 shrink-0 flex-col gap-1.5 rounded-xl border p-3 transition-colors ${
         inGalleryFilter
           ? 'border-blue-400 bg-blue-50 ring-1 ring-blue-300'
           : isFocus
@@ -104,6 +107,18 @@ function CompetitorCard({
               : 'border-gray-200 bg-gray-50 opacity-60'
       }`}
     >
+      {!isFocus && onRemove && (
+        <button
+          type="button"
+          onClick={onRemove}
+          disabled={disabled}
+          aria-label={`Remove ${app.name}`}
+          title={`Remove ${app.name} from this workspace`}
+          className="absolute -right-1.5 -top-1.5 flex h-5 w-5 items-center justify-center rounded-full border border-gray-200 bg-white text-xs leading-none text-gray-400 opacity-0 shadow-sm transition hover:border-red-300 hover:text-red-600 focus:opacity-100 group-hover:opacity-100 disabled:cursor-not-allowed disabled:opacity-0"
+        >
+          ✕
+        </button>
+      )}
       <div className="flex items-center gap-2">
         {!isFocus && (
           <input
@@ -238,6 +253,7 @@ export function CompetitorRail({
   galleryAppIds,
   onToggleSelected,
   onToggleGalleryApp,
+  onRemoveCompetitor,
   onShowAllCreatives,
   onAddCompetitor,
   onCountryChange,
@@ -363,6 +379,7 @@ export function CompetitorRail({
               inGalleryFilter={galleryAppIds.has(app.appId)}
               onToggleSelected={() => onToggleSelected(app.appId)}
               onToggleGalleryApp={() => onToggleGalleryApp(app.appId)}
+              onRemove={() => onRemoveCompetitor(app.appId)}
             />
           ))}
           {!running && <AddCompetitorCard onAdd={onAddCompetitor} excludeIds={allIds} />}

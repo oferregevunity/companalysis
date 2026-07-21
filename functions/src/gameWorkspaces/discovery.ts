@@ -1,6 +1,5 @@
 import { VertexAI } from '@google-cloud/vertexai';
 import type { AppStoreDetail, SearchedApp } from '../sensorTower/client';
-import type { CompetitorRow } from '../sensorTower/competitors';
 
 const PROJECT_ID = process.env.GCLOUD_PROJECT || process.env.GCP_PROJECT || '';
 const LOCATION = 'us-central1';
@@ -116,32 +115,27 @@ export function pickBestMatch(
 export interface DiscoverDeps {
   focusAppId: string;
   detail: DiscoveryPromptInput;
-  /** Category id for the revenue backfill (null skips backfill). */
-  category: string | null;
-  country: string;
   callGemini: (prompt: string) => Promise<string>;
   searchApps: (term: string) => Promise<SearchedApp[]>;
-  fetchCategoryTop: (category: string, country: string) => Promise<CompetitorRow[]>;
   /** Bounded parallelism for name-resolution search calls. */
   concurrency?: number;
-  targetCount?: number;
 }
 
 /**
  * AI-grounded competitor discovery: Gemini proposes real competitor titles
- * from the game's store listing, each is resolved to a unified app via
- * Sensor Tower search, and category top-revenue apps backfill the list.
+ * from the game's store listing and each is resolved to a unified app via
+ * Sensor Tower search. Only relevant, AI-matched competitors are returned —
+ * no category top-grossers are injected.
  */
 export async function discoverCompetitorsWithDeps(deps: DiscoverDeps): Promise<DiscoveredCompetitor[]> {
-  const { focusAppId, detail, category, country, callGemini, searchApps, fetchCategoryTop } = deps;
+  const { focusAppId, detail, callGemini, searchApps } = deps;
   const concurrency = deps.concurrency ?? 5;
-  const targetCount = deps.targetCount ?? 20;
 
   let candidates: DiscoveryCandidate[] = [];
   try {
     candidates = parseDiscoveryResponse(await callGemini(buildDiscoveryPrompt(detail)));
   } catch (err) {
-    console.warn('Competitor discovery Gemini call failed, falling back to category top:', err);
+    console.warn('Competitor discovery Gemini call failed:', err);
   }
 
   // Resolve Gemini's titles to real unified apps, preserving rank order.
@@ -184,51 +178,6 @@ export async function discoverCompetitorsWithDeps(deps: DiscoverDeps): Promise<D
     }
   }
 
-  // Backfill with category top-by-revenue until we have a healthy candidate pool.
-  if (category && out.length < targetCount) {
-    try {
-      const top = await fetchCategoryTop(category, country);
-      for (const app of top) {
-        if (out.length >= targetCount) break;
-        if (seen.has(app.appId)) {
-          // Category data enriches an AI row with revenue/downloads.
-          const existing = out.find(o => o.appId === app.appId);
-          if (existing) {
-            existing.revenue = app.revenue;
-            existing.downloads = app.downloads;
-          }
-          continue;
-        }
-        seen.add(app.appId);
-        out.push({
-          appId: app.appId,
-          name: app.name,
-          publisherName: app.publisherName,
-          iosAppId: app.iosAppId,
-          androidAppId: app.androidAppId,
-          iconUrl: app.iconUrl,
-          revenue: app.revenue,
-          downloads: app.downloads,
-          source: 'category',
-          reason: null,
-        });
-      }
-      // Enrich AI rows that also rank in the category top list.
-      const byId = new Map(top.map(t => [t.appId, t]));
-      for (const o of out) {
-        if (o.revenue === null) {
-          const t = byId.get(o.appId);
-          if (t) {
-            o.revenue = t.revenue;
-            o.downloads = t.downloads;
-          }
-        }
-      }
-    } catch (err) {
-      console.warn('Category backfill failed:', err);
-    }
-  }
-
   return out;
 }
 
@@ -239,14 +188,10 @@ export async function discoverCompetitors(params: {
   publisherName: string;
   iosAppId: string | null;
   androidAppId: string | null;
-  category: string | null;
   country: string;
   authToken: string;
 }): Promise<DiscoveredCompetitor[]> {
-  const [{ fetchAppStoreDetail, searchUnifiedApps }, { fetchCompetitorsForCategory }] = await Promise.all([
-    import('../sensorTower/client'),
-    import('../sensorTower/competitors'),
-  ]);
+  const { fetchAppStoreDetail, searchUnifiedApps } = await import('../sensorTower/client');
 
   let detail: AppStoreDetail | null = null;
   try {
@@ -256,7 +201,7 @@ export async function discoverCompetitors(params: {
       detail = await fetchAppStoreDetail('android', params.androidAppId, params.authToken, params.country);
     }
   } catch (err) {
-    console.warn('Store detail fetch failed, discovery proceeds on name/category only:', err);
+    console.warn('Store detail fetch failed, discovery proceeds on name only:', err);
   }
 
   return discoverCompetitorsWithDeps({
@@ -270,20 +215,10 @@ export async function discoverCompetitors(params: {
       lastMonthDownloads: detail?.lastMonthDownloads ?? null,
       lastMonthRevenue: detail?.lastMonthRevenue ?? null,
     },
-    category: params.category,
-    country: params.country,
     callGemini: async (prompt: string) => {
       const result = await getModel().generateContent(prompt);
       return result.response.candidates?.[0]?.content?.parts?.[0]?.text || '';
     },
     searchApps: (term: string) => searchUnifiedApps(term, params.authToken, 5),
-    fetchCategoryTop: (category: string, country: string) =>
-      fetchCompetitorsForCategory({
-        authToken: params.authToken,
-        category,
-        country,
-        excludeAppId: params.focusAppId,
-        limit: 25,
-      }),
   });
 }

@@ -6,7 +6,6 @@ import {
   discoverCompetitorsWithDeps,
 } from './discovery';
 import type { SearchedApp } from '../sensorTower/client';
-import type { CompetitorRow } from '../sensorTower/competitors';
 
 function hit(appId: string, name: string, publisherName = ''): SearchedApp {
   return {
@@ -19,19 +18,6 @@ function hit(appId: string, name: string, publisherName = ''): SearchedApp {
     iosCategories: [],
     androidCategories: [],
     gameCategory: null,
-  };
-}
-
-function categoryRow(appId: string, name: string, revenue: number): CompetitorRow {
-  return {
-    appId,
-    name,
-    publisherName: 'Pub',
-    iosAppId: null,
-    androidAppId: null,
-    iconUrl: null,
-    revenue,
-    downloads: revenue * 10,
   };
 }
 
@@ -110,12 +96,13 @@ describe('discoverCompetitorsWithDeps', () => {
     lastMonthRevenue: null,
   };
 
-  it('resolves AI picks in rank order, dedupes, excludes the focus game, and backfills from category', async () => {
+  it('resolves AI picks in rank order, dedupes, excludes the focus game, drops hallucinated titles, and injects no category rows', async () => {
     const callGemini = vi.fn().mockResolvedValue(
       JSON.stringify({
         competitors: [
           { name: 'Hole.io', publisher: 'Voodoo', reason: 'same mechanic' },
           { name: 'Attack Hole', publisher: '', reason: 'same theme' },
+          { name: 'Hole.io', publisher: 'Voodoo', reason: 'duplicate pick' },
           { name: 'Invented Game That Does Not Exist', publisher: '', reason: 'hallucinated' },
           { name: 'Hole It 3D', publisher: 'Supersonic', reason: 'is the game itself' },
         ],
@@ -127,55 +114,29 @@ describe('discoverCompetitorsWithDeps', () => {
       if (term === 'Hole It 3D') return [hit('focus-id', 'Hole It 3D', 'Supersonic')];
       return [];
     });
-    const fetchCategoryTop = vi.fn(async () => [
-      categoryRow('hole-io', 'Hole.io', 900),
-      categoryRow('cat-1', 'Golf Rival', 800),
-      categoryRow('cat-2', 'Ball Blast', 700),
-    ]);
 
     const out = await discoverCompetitorsWithDeps({
       focusAppId: 'focus-id',
       detail,
-      category: '7012',
-      country: 'US',
       callGemini,
       searchApps,
-      fetchCategoryTop,
-      targetCount: 4,
     });
 
-    expect(out.map((o) => o.appId)).toEqual(['hole-io', 'attack-hole', 'cat-1', 'cat-2']);
-    expect(out[0].source).toBe('ai');
+    // Only real, AI-matched competitors — deduped, focus + hallucinated dropped.
+    expect(out.map((o) => o.appId)).toEqual(['hole-io', 'attack-hole']);
+    expect(out.every((o) => o.source === 'ai')).toBe(true);
     expect(out[0].reason).toBe('same mechanic');
-    // AI row enriched with category revenue when it also ranks there.
-    expect(out[0].revenue).toBe(900);
-    expect(out[2].source).toBe('category');
+    // No category enrichment: AI rows carry no revenue.
+    expect(out[0].revenue).toBeNull();
   });
 
-  it('falls back to pure category list when Gemini fails', async () => {
+  it('returns an empty list when Gemini fails', async () => {
     const out = await discoverCompetitorsWithDeps({
       focusAppId: 'focus-id',
       detail,
-      category: '7012',
-      country: 'US',
       callGemini: vi.fn().mockRejectedValue(new Error('vertex down')),
       searchApps: vi.fn(),
-      fetchCategoryTop: async () => [categoryRow('cat-1', 'Golf Rival', 800)],
     });
-    expect(out).toHaveLength(1);
-    expect(out[0].source).toBe('category');
-  });
-
-  it('returns AI-only list when no category is available', async () => {
-    const out = await discoverCompetitorsWithDeps({
-      focusAppId: 'focus-id',
-      detail,
-      category: null,
-      country: 'US',
-      callGemini: vi.fn().mockResolvedValue(JSON.stringify({ competitors: [{ name: 'Hole.io', publisher: '', reason: '' }] })),
-      searchApps: async () => [hit('hole-io', 'Hole.io')],
-      fetchCategoryTop: vi.fn(),
-    });
-    expect(out.map((o) => o.appId)).toEqual(['hole-io']);
+    expect(out).toEqual([]);
   });
 });

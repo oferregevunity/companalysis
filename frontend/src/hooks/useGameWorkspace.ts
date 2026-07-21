@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
   collection,
+  deleteDoc,
   doc,
   getDocs,
   limit,
@@ -135,5 +136,15 @@ export function useRecentWorkspaces(max = 8) {
     };
   }, [max]);
 
-  return recent;
+  // Delete a game's workspace doc and drop it from the row (optimistic).
+  const remove = useCallback(async (appId: string) => {
+    setRecent((prev) => prev.filter((r) => r.focusApp.appId !== appId));
+    try {
+      await deleteDoc(doc(db, 'gameWorkspaces', appId));
+    } catch (err) {
+      console.error('useRecentWorkspaces remove', err);
+    }
+  }, []);
+
+  return { recent, remove };
 }

@@ -164,23 +164,55 @@ function applyCreativeFilters(
   return sorted;
 }
 
-function RecentGamesRow({ onSelect }: { onSelect: (game: SearchedGame) => void }) {
-  const recent = useRecentWorkspaces();
+function RecentGamesRow({
+  onSelect,
+  onRefresh,
+}: {
+  onSelect: (game: SearchedGame) => void;
+  onRefresh: (game: SearchedGame) => void;
+}) {
+  const { recent, remove } = useRecentWorkspaces();
   if (recent.length === 0) return null;
   return (
     <div className="flex flex-wrap items-center gap-2">
       <span className="text-xs font-medium text-gray-400">Recent games</span>
       {recent.map((r) => (
-        <button
+        <div
           key={r.focusApp.appId}
-          type="button"
-          onClick={() => onSelect(r.focusApp)}
-          className="inline-flex items-center gap-1.5 rounded-full border border-gray-200 bg-white px-2.5 py-1 text-xs font-medium text-gray-700 hover:border-blue-300 hover:bg-blue-50"
+          className="inline-flex items-center gap-1.5 rounded-full border border-gray-200 bg-white py-1 pl-2.5 pr-1.5 text-xs font-medium text-gray-700 hover:border-blue-300 hover:bg-blue-50"
         >
-          {r.focusApp.iconUrl && <img src={r.focusApp.iconUrl} alt="" className="w-4 h-4 rounded" />}
-          {r.focusApp.name}
-          {r.updatedAt && <span className="text-[10px] text-gray-400">{formatTimeAgo(r.updatedAt)}</span>}
-        </button>
+          <button
+            type="button"
+            onClick={() => onSelect(r.focusApp)}
+            className="inline-flex items-center gap-1.5"
+          >
+            {r.focusApp.iconUrl && <img src={r.focusApp.iconUrl} alt="" className="w-4 h-4 rounded" />}
+            {r.focusApp.name}
+            {r.updatedAt && <span className="text-[10px] text-gray-400">{formatTimeAgo(r.updatedAt)}</span>}
+          </button>
+          <button
+            type="button"
+            title={`Refresh ${r.focusApp.name}'s competitors`}
+            aria-label={`Refresh ${r.focusApp.name}'s competitors`}
+            onClick={() => onRefresh(r.focusApp)}
+            className="flex h-4 w-4 items-center justify-center rounded-full text-sm leading-none text-gray-400 hover:bg-blue-100 hover:text-blue-600"
+          >
+            ↻
+          </button>
+          <button
+            type="button"
+            title={`Delete ${r.focusApp.name} from recent`}
+            aria-label={`Delete ${r.focusApp.name} from recent`}
+            onClick={() => {
+              if (window.confirm(`Remove "${r.focusApp.name}" and its saved competitors?`)) {
+                void remove(r.focusApp.appId);
+              }
+            }}
+            className="flex h-4 w-4 items-center justify-center rounded-full text-xs leading-none text-gray-400 hover:bg-red-100 hover:text-red-600"
+          >
+            ✕
+          </button>
+        </div>
       ))}
     </div>
   );
@@ -290,6 +322,19 @@ export default function Creatives() {
       /* ignore */
     }
   }, []);
+
+  // "Refresh" from the Recent row: open the game and re-run discovery,
+  // overwriting its saved competitor list. Pre-marking hydratedForRef stops
+  // the hydration effect from reloading the stale saved workspace first.
+  const refreshRecent = useCallback(
+    (game: SearchedGame) => {
+      selectFocusApp(game);
+      hydratedForRef.current = game.appId;
+      setCountry('US');
+      runDiscovery(game, 'US');
+    },
+    [selectFocusApp, runDiscovery],
+  );
 
   // Data for the workspace: creatives of focus + selected competitors, plus
   // the workspace-scoped insight doc (same shape as the genre one was).
@@ -407,6 +452,18 @@ export default function Creatives() {
     };
     setCompetitors((prev) => (prev.some((c) => c.appId === game.appId) ? prev : [...prev, row]));
     setSelectedIds((prev) => new Set(prev).add(game.appId));
+  }, []);
+
+  // Remove a competitor from the workspace entirely (not just deselect). The
+  // debounced persist effect below writes the pruned list to the shared doc.
+  const removeCompetitor = useCallback((appId: string) => {
+    setCompetitors((prev) => prev.filter((c) => c.appId !== appId));
+    setSelectedIds((prev) => {
+      if (!prev.has(appId)) return prev;
+      const next = new Set(prev);
+      next.delete(appId);
+      return next;
+    });
   }, []);
 
   const rankMap = useMemo(() => {
@@ -589,7 +646,7 @@ export default function Creatives() {
 
       <GameSearch focusApp={focusApp} onSelect={selectFocusApp} onClear={clearFocusApp} />
 
-      {!focusApp && <RecentGamesRow onSelect={selectFocusApp} />}
+      {!focusApp && <RecentGamesRow onSelect={selectFocusApp} onRefresh={refreshRecent} />}
 
       {!focusApp && (
         <div className="rounded-xl border border-gray-200 bg-white p-10 text-center shadow-sm">
@@ -615,6 +672,7 @@ export default function Creatives() {
           galleryAppIds={filters.appIds}
           onToggleSelected={toggleSelected}
           onToggleGalleryApp={toggleAppFilter}
+          onRemoveCompetitor={removeCompetitor}
           onShowAllCreatives={() => setFilters((prev) => ({ ...prev, appIds: new Set() }))}
           onAddCompetitor={addCompetitor}
           onCountryChange={setCountry}

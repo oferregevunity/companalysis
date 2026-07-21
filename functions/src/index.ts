@@ -471,7 +471,7 @@ export const compAnalysisApi = onRequest(
         }
 
         case 'games/discover-competitors': {
-          const { appId, name, publisherName, iosAppId, androidAppId, category, country } = req.body || {};
+          const { appId, name, publisherName, iosAppId, androidAppId, country } = req.body || {};
           if (!appId || typeof appId !== 'string' || !name || typeof name !== 'string') {
             return sendError(res, 400, 'appId and name (strings) are required');
           }
@@ -482,7 +482,6 @@ export const compAnalysisApi = onRequest(
             publisherName: typeof publisherName === 'string' ? publisherName : '',
             iosAppId: typeof iosAppId === 'string' ? iosAppId : null,
             androidAppId: typeof androidAppId === 'string' ? androidAppId : null,
-            category: typeof category === 'string' && category ? category : null,
             country: typeof country === 'string' && country ? country : 'US',
             authToken: sensorTowerAuthToken.value().trim(),
           });

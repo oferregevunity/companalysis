@@ -1047,8 +1047,9 @@ export default function Dashboard() {
         </div>
       ) : (
         <div className="bg-white rounded-xl border border-[#dadce0] overflow-hidden shadow-[0_1px_2px_0_rgba(60,64,67,0.1)]">
-          <div className="overflow-x-auto">
-            <table className="w-full border-collapse">
+          {/* rotateX flip moves the horizontal scrollbar to the top; table is flipped back to read normally */}
+          <div className="overflow-x-auto" style={{ transform: 'rotateX(180deg)' }}>
+            <table className="w-full border-collapse" style={{ transform: 'rotateX(180deg)' }}>
               <thead>
                 {table.getHeaderGroups().map((headerGroup) => (
                   <tr key={headerGroup.id} className="border-b border-[#e8eaed]">
