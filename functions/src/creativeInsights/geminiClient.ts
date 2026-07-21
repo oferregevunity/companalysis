@@ -68,6 +68,8 @@ export interface BuildPromptInput {
   winners: CreativeWinnerInput[];
   conceptCandidates: CreativeCandidateInput[];
   watchCandidates: CreativeCandidateInput[];
+  /** When set, creatives from this appId are the focus game ("you") — used to flag concept gaps. */
+  focusAppId?: string;
 }
 
 export interface ParsedCreativeResponse {
@@ -86,26 +88,31 @@ function adTextSuffix(title?: string | null, message?: string | null): string {
 }
 
 export function buildCreativePrompt(input: BuildPromptInput): string {
+  const you = (appId: string) => (input.focusAppId && appId === input.focusAppId ? ' [YOU]' : '');
   const winnerLines = input.winners
     .map(
       (w, i) =>
-        `#${i + 1} ${w.creativeId} — app=${w.appName} (${w.publisherName}) fmt=${w.format} networks=[${w.networks.join(', ')}] score=${w.score}/100 sub=[L=${w.subScores.longevity}, NB=${w.subScores.networkBreadth}, IM=${w.subScores.impressionMomentum}, FAP=${w.subScores.freshnessAdjustedPersistence}] firstSeen=${w.firstSeen} dur=${w.durationDays}d${adTextSuffix(w.title, w.message)}`,
+        `#${i + 1} ${w.creativeId} — app=${w.appName}${you(w.appId)} (${w.publisherName}) fmt=${w.format} networks=[${w.networks.join(', ')}] score=${w.score}/100 sub=[L=${w.subScores.longevity}, NB=${w.subScores.networkBreadth}, IM=${w.subScores.impressionMomentum}, FAP=${w.subScores.freshnessAdjustedPersistence}] firstSeen=${w.firstSeen} dur=${w.durationDays}d${adTextSuffix(w.title, w.message)}`,
     )
     .join('\n');
   const conceptLines = input.conceptCandidates
     .map(
       c =>
-        `- ${c.creativeId} — app=${c.appName} fmt=${c.format} networks=[${c.networks.join(', ')}] score=${c.score}${adTextSuffix(c.title, c.message)}`,
+        `- ${c.creativeId} — app=${c.appName}${you(c.appId)} fmt=${c.format} networks=[${c.networks.join(', ')}] score=${c.score}${adTextSuffix(c.title, c.message)}`,
     )
     .join('\n');
   const watchLines = input.watchCandidates
     .map(
       c =>
-        `- ${c.creativeId} — app=${c.appName} fmt=${c.format} networks=[${c.networks.join(', ')}] score=${c.score}${adTextSuffix(c.title, c.message)}`,
+        `- ${c.creativeId} — app=${c.appName}${you(c.appId)} fmt=${c.format} networks=[${c.networks.join(', ')}] score=${c.score}${adTextSuffix(c.title, c.message)}`,
     )
     .join('\n');
 
-  return `You are a mobile UA creative strategist. Analyze the top-performing ad creatives for the "${input.genreName}" genre in week ${input.week}.
+  const focusNote = input.focusAppId
+    ? `\nCreatives marked [YOU] belong to the focus game being analyzed. In emergingConcepts, PRIORITIZE concepts that competitors run but the [YOU] game does NOT — these are gaps the focus game is missing. When a concept is absent from the [YOU] game, say so explicitly in its description.\n`
+    : '';
+
+  return `You are a mobile UA creative strategist. Analyze the top-performing ad creatives for the "${input.genreName}" genre in week ${input.week}.${focusNote}
 
 TOP WINNING CREATIVES:
 ${winnerLines || '(none)'}

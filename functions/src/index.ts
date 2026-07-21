@@ -520,6 +520,57 @@ export const compAnalysisApi = onRequest(
           return sendSuccess(res, result);
         }
 
+        case 'games/market-opportunity': {
+          const { focusAppId, apps, category, androidCategory, primaryCountry } = req.body || {};
+          if (
+            !focusAppId ||
+            typeof focusAppId !== 'string' ||
+            !category ||
+            typeof category !== 'string' ||
+            !Array.isArray(apps) ||
+            apps.length === 0
+          ) {
+            return sendError(res, 400, 'focusAppId, category, and a non-empty apps array are required');
+          }
+          const marketApps = (apps as unknown[])
+            .filter((a): a is Record<string, unknown> => !!a && typeof a === 'object')
+            .map((a) => ({
+              appId: String(a.appId ?? ''),
+              iosAppId: typeof a.iosAppId === 'string' ? a.iosAppId : null,
+              androidAppId: typeof a.androidAppId === 'string' ? a.androidAppId : null,
+              isFocus: a.isFocus === true,
+            }))
+            .filter((a) => a.appId.length > 0);
+          if (marketApps.length === 0) {
+            return sendError(res, 400, 'apps must contain at least one app with an appId');
+          }
+          const { fetchMarketPresence } = await import('./gameWorkspaces/marketPresence');
+          const presence = await fetchMarketPresence({
+            focusAppId,
+            apps: marketApps,
+            category,
+            androidCategory: typeof androidCategory === 'string' && androidCategory ? androidCategory : null,
+            primaryCountry: typeof primaryCountry === 'string' && primaryCountry ? primaryCountry : 'US',
+            authToken: sensorTowerAuthToken.value().trim(),
+          });
+          return sendSuccess(res, presence);
+        }
+
+        case 'marketPulse/run': {
+          const { weekStart, weekEnd, skipFetch } = req.body || {};
+          if (!weekStart || typeof weekStart !== 'string' || !weekEnd || typeof weekEnd !== 'string') {
+            return sendError(res, 400, 'weekStart and weekEnd are required');
+          }
+          const { runMarketPulse } = await import('./marketPulse/runPulse');
+          const result = await runMarketPulse({
+            authToken: sensorTowerAuthToken.value().trim(),
+            weekStart,
+            weekEnd,
+            skipFetch: skipFetch === true,
+          });
+          return sendSuccess(res, result);
+        }
+
         case 'creatives/trigger': {
           const { genreId, weekStart, weekEnd } = req.body || {};
           if (!genreId || !weekStart || !weekEnd) {
@@ -611,4 +662,4 @@ export const compAnalysisApi = onRequest(
   }
 );
 
-export { weeklyFetchApps, weeklyFetchCreatives, weeklyFetchCreativesFallback } from './scheduled/weeklyFetch';
+export { weeklyFetchApps, weeklyFetchCreatives, weeklyFetchCreativesFallback, weeklyMarketPulse } from './scheduled/weeklyFetch';

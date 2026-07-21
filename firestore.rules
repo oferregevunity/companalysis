@@ -116,5 +116,11 @@ service cloud.firestore {
       allow read: if isUnityUser();
       allow write: if false;
     }
+
+    // Cross-genre Market Pulse (one doc per week). Written server-side.
+    match /marketPulse/{week} {
+      allow read: if isUnityUser();
+      allow write: if false;
+    }
   }
 }

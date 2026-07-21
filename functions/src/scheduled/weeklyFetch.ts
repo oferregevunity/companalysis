@@ -299,3 +299,33 @@ export const weeklyFetchCreativesFallback = onSchedule(
   },
   runCreativesPhase,
 );
+
+/**
+ * Cross-genre "Market Pulse": scans the opted-in genres for the latest
+ * completed week (fetch + hook/theme tag via the genre creative pipeline),
+ * then aggregates rising concepts across genres into `marketPulse/{week}`.
+ * Runs after the creatives phase so genre app data is already fresh.
+ */
+export const weeklyMarketPulse = onSchedule(
+  {
+    schedule: 'every monday 11:00',
+    timeZone: 'America/New_York',
+    timeoutSeconds: 1800,
+    memory: '2GiB',
+    secrets: [sensorTowerAuthToken],
+  },
+  async () => {
+    const authToken = sensorTowerAuthToken.value().trim();
+    const [prevWeek] = getLastNWeeks(1);
+    const { runMarketPulse } = await import('../marketPulse/runPulse');
+    const result = await runMarketPulse({
+      authToken,
+      weekStart: prevWeek.startDate,
+      weekEnd: prevWeek.endDate,
+      deadlineMs: Date.now() + TIME_BUDGET_MS,
+    });
+    console.log(
+      `weeklyMarketPulse: week=${result.week} genres=${result.genresScanned} rising=${result.risingConcepts} errors=${result.errors.length}`,
+    );
+  },
+);
