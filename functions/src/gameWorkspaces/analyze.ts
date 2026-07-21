@@ -88,6 +88,7 @@ export async function analyzeGameWorkspace(params: {
     genreId: scopeId,
     week,
     genreName: `${focusName} competitor set`,
+    focusAppId,
     loadScores: async () => {
       const snap = await insightDocRef.collection('scores').get();
       return snap.docs.map(d => d.data() as import('../creativeInsights/scoringPipeline').CreativeScoreRow);

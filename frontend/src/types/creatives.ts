@@ -144,6 +144,33 @@ export interface CreativeInsightDoc {
   geminiError?: string;
 }
 
+/** One rising cross-genre concept. Mirrors `NamedRisingConcept` in `functions/src/marketPulse/geminiClient.ts`. */
+export interface RisingConcept {
+  title: string;
+  description: string;
+  kind: 'hook' | 'theme';
+  label: string;
+  hookType: string | null;
+  themes: string[];
+  /** null when the concept is new this week (no prior-week baseline). */
+  wowGrowthPct: number | null;
+  isNew: boolean;
+  exampleCreativeIds: CreativeDocId[];
+  genresSeenIn: string[];
+}
+
+/** Mirrors `MarketPulseDoc` in `functions/src/marketPulse/runPulse.ts`. Doc id is the ISO week. */
+export interface MarketPulseDoc {
+  week: string;
+  generatedAt?: { seconds: number; nanoseconds: number } | Date;
+  genresScanned: string[];
+  risingConcepts: RisingConcept[];
+  topHooks: Array<{ hookType: string; count: number; share: number; wowDelta: number | null }>;
+  topThemes: Array<{ theme: string; count: number; wowDelta: number | null }>;
+  note?: string;
+  geminiError?: string;
+}
+
 /** Cached display row in `appNames/{unifiedAppId}` (see backend upserts). */
 export interface AppNameEntry {
   unifiedAppId?: string;

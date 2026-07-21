@@ -10,6 +10,8 @@ export interface Filters {
   hookTypes: Set<string>;
   /** Lowercased AI theme tags (selected from the Hooks & themes panel). */
   themes: Set<string>;
+  /** Video-length buckets (selected from the Formats & lengths panel). */
+  durationBuckets: Set<string>;
   newThisWeek: boolean;
   winnersOnly: boolean;
   sort: 'score' | 'duration' | 'firstSeen' | 'sov';
@@ -23,6 +25,7 @@ export function defaultFilters(): Filters {
     appIds: new Set(),
     hookTypes: new Set(),
     themes: new Set(),
+    durationBuckets: new Set(),
     newThisWeek: false,
     winnersOnly: false,
     sort: 'score',

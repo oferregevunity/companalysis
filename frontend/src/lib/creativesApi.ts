@@ -128,6 +128,57 @@ export function analyzeGameWorkspace(
   return callFunction<AnalyzeWorkspaceResult>('games/analyze', { focusAppId, focusName, appIds, week });
 }
 
+/** One app descriptor for market-opportunity lookups (store ids needed for the OS split). */
+export interface MarketApp {
+  appId: string;
+  iosAppId: string | null;
+  androidAppId: string | null;
+  isFocus: boolean;
+}
+
+/** Mirrors `CountryPresence` in `functions/src/gameWorkspaces/marketPresence.ts`. */
+export interface CountryPresence {
+  country: string;
+  competitorRevenue: number;
+  competitorDownloads: number;
+  focusRevenue: number;
+  focusDownloads: number;
+  focusShare: number;
+  competitorGames: number;
+  topCompetitors: Array<{ appId: string; revenue: number }>;
+}
+
+/** Mirrors `OsPresence` in `functions/src/gameWorkspaces/marketPresence.ts`. */
+export interface OsPresence {
+  os: 'ios' | 'android';
+  competitorRevenue: number;
+  competitorDownloads: number;
+  focusRevenue: number;
+  focusDownloads: number;
+  focusShare: number;
+  competitorGames: number;
+}
+
+/** Mirrors `MarketPresence`; `generatedAt` is present only when read back from Firestore. */
+export interface MarketPresence {
+  month: string;
+  primaryCountry: string;
+  byCountry: CountryPresence[];
+  byOs: OsPresence[];
+  generatedAt?: { seconds: number; nanoseconds: number } | Date;
+}
+
+/** Compute + persist competitor country/OS market presence for a workspace. */
+export function fetchMarketOpportunity(params: {
+  focusAppId: string;
+  apps: MarketApp[];
+  category: string;
+  androidCategory: string | null;
+  primaryCountry: string;
+}): Promise<MarketPresence> {
+  return callFunction<MarketPresence>('games/market-opportunity', params);
+}
+
 export function getWatchlistApps(): Promise<{ appIds: string[] }> {
   return callFunction<{ appIds: string[] }>('creatives/watchlist', {});
 }

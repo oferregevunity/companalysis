@@ -40,6 +40,8 @@ export interface PipelineDeps {
   loadAppMeta: (appIds: string[]) => Promise<Map<string, { name: string; publisherName: string }>>;
   callGemini: (input: BuildPromptInput) => Promise<ParsedCreativeResponse & { geminiError?: string }>;
   write: (doc: CreativeInsightDoc) => Promise<void>;
+  /** Focus game appId — flags concept gaps ("competitors run this, you don't") in the prompt. */
+  focusAppId?: string;
   now?: Date;
 }
 
@@ -142,7 +144,7 @@ function emptyDocBase(deps: {
 export async function generateAndStoreCreativeInsightsWithDeps(
   deps: PipelineDeps,
 ): Promise<{ ok: boolean; winners: number; geminiError?: string }> {
-  const { genreId, week, genreName, loadScores, loadCreatives, loadAppMeta, callGemini, write, now = new Date() } = deps;
+  const { genreId, week, genreName, loadScores, loadCreatives, loadAppMeta, callGemini, write, focusAppId, now = new Date() } = deps;
 
   const scores = await loadScores();
   if (scores.length === 0) {
@@ -168,6 +170,7 @@ export async function generateAndStoreCreativeInsightsWithDeps(
     winners: winnerRows.map(r => toWinnerInput(r, creativesMap.get(r.docId), appMeta)),
     conceptCandidates: conceptRows.map(r => toCandidateInput(r, creativesMap.get(r.docId), appMeta)),
     watchCandidates: watchRows.map(r => toCandidateInput(r, creativesMap.get(r.docId), appMeta)),
+    ...(focusAppId ? { focusAppId } : {}),
   };
 
   let parsed: ParsedCreativeResponse & { geminiError?: string };

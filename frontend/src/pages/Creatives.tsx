@@ -14,6 +14,11 @@ import { CreativeGallery } from '../components/creatives/CreativeGallery';
 import { GameSearch } from '../components/creatives/GameSearch';
 import { CompetitorRail } from '../components/creatives/CompetitorRail';
 import { HookThemePanel } from '../components/creatives/HookThemePanel';
+import { FormatGapPanel } from '../components/creatives/FormatGapPanel';
+import { OpportunityPanel } from '../components/creatives/OpportunityPanel';
+import { MarketPulsePanel } from '../components/creatives/MarketPulsePanel';
+import { durationBucket } from '../lib/creativeBuckets';
+import type { MarketApp } from '../lib/creativesApi';
 import {
   buildAppOptions,
   CreativeFilters,
@@ -114,6 +119,10 @@ function applyCreativeFilters(
 
   if (filters.formats.size > 0) {
     out = out.filter((c) => filters.formats.has(c.format));
+  }
+
+  if (filters.durationBuckets.size > 0) {
+    out = out.filter((c) => c.format === 'video' && filters.durationBuckets.has(durationBucket(c.videoDurationSec)));
   }
 
   if (filters.appIds.size > 0) {
@@ -289,6 +298,32 @@ export default function Creatives() {
     return [focusApp.appId, ...competitors.filter((c) => selectedIds.has(c.appId)).map((c) => c.appId)];
   }, [focusApp, competitors, selectedIds]);
 
+  // Focus + selected competitors with store ids, for the country/OS market lookup.
+  const marketApps = useMemo<MarketApp[]>(() => {
+    if (!focusApp) return [];
+    const focus: MarketApp = {
+      appId: focusApp.appId,
+      iosAppId: focusApp.iosAppId,
+      androidAppId: focusApp.androidAppId,
+      isFocus: true,
+    };
+    const comps = competitors
+      .filter((c) => selectedIds.has(c.appId))
+      .map<MarketApp>((c) => ({
+        appId: c.appId,
+        iosAppId: c.iosAppId,
+        androidAppId: c.androidAppId,
+        isFocus: false,
+      }));
+    return [focus, ...comps];
+  }, [focusApp, competitors, selectedIds]);
+
+  const marketCategory = useMemo(
+    () => focusApp?.gameCategory ?? focusApp?.iosCategories[0] ?? null,
+    [focusApp],
+  );
+  const marketAndroidCategory = useMemo(() => focusApp?.androidCategories[0] ?? null, [focusApp]);
+
   const { data: insightDoc, loading: insightLoading } = useCreativeInsights(scopeId, latestWeek);
   const {
     creatives: joinedCreatives,
@@ -391,6 +426,21 @@ export default function Creatives() {
     return m;
   }, [insightDoc]);
 
+  // Hooks/themes the focus app already runs — used to flag rising market concepts it's missing.
+  const focusTagSets = useMemo(() => {
+    const hooks = new Set<string>();
+    const themes = new Set<string>();
+    const prefix = focusApp ? `${focusApp.appId}__` : null;
+    if (prefix) {
+      for (const t of insightDoc?.creativeTags ?? []) {
+        if (!t.creativeId.startsWith(prefix)) continue;
+        hooks.add(t.hookType);
+        for (const th of t.themes) themes.add(th.trim().toLowerCase());
+      }
+    }
+    return { hooks, themes };
+  }, [insightDoc, focusApp]);
+
   const appIds = useMemo(() => joinedCreatives.map((c) => c.appId), [joinedCreatives]);
   const appNames = useAppNames(appIds);
 
@@ -448,6 +498,33 @@ export default function Creatives() {
       if (next.has(theme)) next.delete(theme);
       else next.add(theme);
       return { ...prev, themes: next };
+    });
+  }, []);
+
+  const toggleDurationBucket = useCallback((bucket: string) => {
+    setFilters((prev) => {
+      const next = new Set(prev.durationBuckets);
+      if (next.has(bucket)) next.delete(bucket);
+      else next.add(bucket);
+      return { ...prev, durationBuckets: next };
+    });
+  }, []);
+
+  const toggleFormatFilter = useCallback((format: CreativeFormat) => {
+    setFilters((prev) => {
+      const next = new Set(prev.formats);
+      if (next.has(format)) next.delete(format);
+      else next.add(format);
+      return { ...prev, formats: next };
+    });
+  }, []);
+
+  const toggleNetworkFilter = useCallback((network: QueryableAdNetwork) => {
+    setFilters((prev) => {
+      const next = new Set(prev.networks);
+      if (next.has(network)) next.delete(network);
+      else next.add(network);
+      return { ...prev, networks: next };
     });
   }, []);
 
@@ -591,6 +668,33 @@ export default function Creatives() {
             onToggleTheme={toggleTheme}
             hasInsightDoc={insightDoc != null}
           />
+
+          {focusApp && (
+            <FormatGapPanel
+              creatives={joinedCreatives}
+              focusAppId={focusApp.appId}
+              selectedFormats={filters.formats}
+              selectedDurationBuckets={filters.durationBuckets}
+              onToggleFormat={toggleFormatFilter}
+              onToggleDurationBucket={toggleDurationBucket}
+            />
+          )}
+
+          {focusApp && (
+            <OpportunityPanel
+              creatives={joinedCreatives}
+              focusAppId={focusApp.appId}
+              marketApps={marketApps}
+              category={marketCategory}
+              androidCategory={marketAndroidCategory}
+              primaryCountry={country}
+              appNames={appNames}
+              selectedNetworks={filters.networks}
+              onToggleNetwork={toggleNetworkFilter}
+            />
+          )}
+
+          <MarketPulsePanel focusHookTypes={focusTagSets.hooks} focusThemes={focusTagSets.themes} />
         </>
       )}
 
