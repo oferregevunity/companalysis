@@ -418,6 +418,16 @@ export async function fetchAndStoreGenre(
     } catch (err) {
       errors.push(`Aggregate rebuild failed for ${genre.name}: ${err}`);
     }
+    // Also refresh the week read-model from whatever week snapshots already
+    // exist. This path only fetches months, so it never *adds* week data — but
+    // rebuilding here keeps the `_week` aggregate in lockstep with `_month` on
+    // every genre refresh, so the dashboard's weekly view keeps hitting the
+    // one-doc fast path instead of falling back to the snapshot fan-out.
+    try {
+      await rebuildGenreAggregate(genre, 'week');
+    } catch (err) {
+      errors.push(`Aggregate (week) rebuild failed for ${genre.name}: ${err}`);
+    }
   }
 
   return { success: errors.length === 0, monthsProcessed, errors };

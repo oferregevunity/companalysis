@@ -336,6 +336,48 @@ export const compAnalysisApi = onRequest(
           return;
         }
 
+        case 'aggregates/rebuild': {
+          // One-time backfill / repair for the dashboard read-models. Rebuilds
+          // the genreAggregates docs from existing snapshots (no Sensor Tower
+          // calls). Defaults to the `week` granularity, which is the one the
+          // routine month fetch never used to maintain and is therefore the one
+          // most likely missing. Pass { granularity: 'month' | 'week' | 'both' }
+          // and optionally { genreIds: [...] } to scope it.
+          const { genreIds: rebuildGenreIds, granularity: rebuildGranularity } = req.body || {};
+          const grans: ('month' | 'week')[] =
+            rebuildGranularity === 'both'
+              ? ['month', 'week']
+              : rebuildGranularity === 'month'
+                ? ['month']
+                : ['week'];
+
+          let rebuildDocs: { id: string; [key: string]: any }[] = [];
+          if (rebuildGenreIds && Array.isArray(rebuildGenreIds) && rebuildGenreIds.length > 0) {
+            for (const gid of rebuildGenreIds) {
+              const gDoc = await db.collection('genres').doc(gid).get();
+              if (gDoc.exists) rebuildDocs.push({ id: gDoc.id, ...gDoc.data() } as any);
+            }
+          } else {
+            const genresSnapshot = await db.collection('genres').get();
+            rebuildDocs = genresSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as any));
+          }
+
+          const rebuildErrors: string[] = [];
+          const rebuilt: { genre: string; granularity: string; appCount: number; months: number }[] = [];
+          for (const genre of rebuildDocs) {
+            for (const gran of grans) {
+              try {
+                const r = await rebuildGenreAggregate(genre as any, gran, db);
+                rebuilt.push({ genre: genre.name ?? genre.id, granularity: gran, appCount: r.appCount, months: r.months.length });
+              } catch (err) {
+                rebuildErrors.push(`${genre.name ?? genre.id} (${gran}): ${err}`);
+              }
+            }
+          }
+          sendSuccess(res, { success: rebuildErrors.length === 0, rebuilt, errors: rebuildErrors });
+          return;
+        }
+
         case 'analysis/delete': {
           const { genreId: deleteGenreId } = req.body;
           if (!deleteGenreId) {
