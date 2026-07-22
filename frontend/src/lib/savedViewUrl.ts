@@ -62,6 +62,9 @@ export function payloadToQueryString(payload: SavedViewPayload): string {
   if (payload.risingThreshold !== d.risingThreshold) {
     params.set('rt', String(payload.risingThreshold));
   }
+  if (payload.minDailyRevenue !== d.minDailyRevenue) {
+    params.set('mdr', String(payload.minDailyRevenue));
+  }
   if (payload.favoritesOnly !== d.favoritesOnly) {
     params.set('fo', payload.favoritesOnly ? '1' : '0');
   }
@@ -129,6 +132,12 @@ export function queryStringToPayload(search: string): SavedViewPayload {
   if (rt !== null && rt !== '') {
     const n = Number(rt);
     if (!Number.isNaN(n)) out.risingThreshold = n;
+  }
+
+  const mdr = params.get('mdr');
+  if (mdr !== null && mdr !== '') {
+    const n = Number(mdr);
+    if (!Number.isNaN(n) && n >= 0) out.minDailyRevenue = n;
   }
 
   const fo = params.get('fo');

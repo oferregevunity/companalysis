@@ -1,6 +1,6 @@
 import type { AppData, ComparisonRow, RisingStatus } from '../types';
 
-function daysInPeriod(periodStr: string): number {
+export function daysInPeriod(periodStr: string): number {
   if (periodStr.includes('W')) return 7;
   const [year, month] = periodStr.split('-').map(Number);
   return new Date(year, month, 0).getDate();
@@ -25,12 +25,24 @@ function computePercentChanges(
   return changes;
 }
 
+/**
+ * Optional absolute-magnitude gate for the rising streak. When both
+ * `dailyRevenueByPeriod` and `minDailyRevenue` are supplied, a period-over-period
+ * change only counts toward a streak if its BASE (earlier) period's daily revenue
+ * cleared the floor. Omit `opts` (e.g. for the downloads axis) to keep the
+ * percentage-only behavior.
+ */
 export function computeRisingStatus(
   percentChanges: Record<string, number | null>,
   months: string[],
-  threshold: number = 20
+  threshold: number = 20,
+  opts?: { dailyRevenueByPeriod?: Record<string, number>; minDailyRevenue?: number }
 ): RisingStatus {
   const sorted = [...months].sort();
+  const floor = opts?.minDailyRevenue;
+  const dailyByPeriod = opts?.dailyRevenueByPeriod;
+  const gated = floor !== undefined && floor > 0 && dailyByPeriod !== undefined;
+
   for (const level of [3, 2, 1] as const) {
     if (sorted.length < level + 1) continue;
     let match = true;
@@ -40,6 +52,13 @@ export function computeRisingStatus(
       if (pct === null || pct === undefined || pct < threshold) {
         match = false;
         break;
+      }
+      if (gated) {
+        const basePeriod = sorted[sorted.length - 2 - i];
+        if ((dailyByPeriod![basePeriod] ?? 0) < floor!) {
+          match = false;
+          break;
+        }
       }
     }
     if (match) return `Rising ${level}` as RisingStatus;
@@ -52,7 +71,8 @@ export function buildComparisonData(
   appsByMonth: Record<string, AppData[]>,
   genreName: string = '',
   genreId: string = '',
-  risingThreshold: number = 20
+  risingThreshold: number = 20,
+  minDailyRevenue: number = 500
 ): ComparisonRow[] {
   if (months.length === 0) return [];
 
@@ -84,6 +104,12 @@ export function buildComparisonData(
     const percentChanges = computePercentChanges(revenueByMonth, months);
     const downloadPercentChanges = computePercentChanges(downloadsByMonth, months);
 
+    const dailyRevenueByPeriod: Record<string, number> = {};
+    for (const month of months) {
+      const days = daysInPeriod(month);
+      dailyRevenueByPeriod[month] = days > 0 ? revenueByMonth[month] / days : 0;
+    }
+
     const latestRevenue = revenueByMonth[latestMonth] || 0;
     const latestDownloads = downloadsByMonth[latestMonth] || 0;
     const dailyRevenue = latestDays > 0 ? latestRevenue / latestDays : 0;
@@ -104,7 +130,10 @@ export function buildComparisonData(
       downloadPercentChanges,
       dailyRevenue,
       dailyDownloads,
-      risingStatus: computeRisingStatus(percentChanges, months, risingThreshold),
+      risingStatus: computeRisingStatus(percentChanges, months, risingThreshold, {
+        dailyRevenueByPeriod,
+        minDailyRevenue,
+      }),
       risingStatusDownloads: computeRisingStatus(downloadPercentChanges, months, risingThreshold),
     };
   });

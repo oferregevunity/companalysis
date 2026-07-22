@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { collection, doc, getDoc, getDocs, query, where, orderBy } from 'firebase/firestore';
 import { db } from '../lib/firebase';
-import { buildComparisonData, computeRisingStatus } from '../lib/dataProcessing';
+import { buildComparisonData, computeRisingStatus, daysInPeriod } from '../lib/dataProcessing';
 import type { Genre, AppData, ComparisonRow } from '../types';
 
 /** Raw per-genre fetch result, before pivot/merge. */
@@ -36,7 +36,7 @@ function computePercentChanges(
 
 export type Granularity = 'month' | 'week';
 
-export function useMultiGenreSnapshots(selectedGenres: Genre[], risingThreshold: number = 20, granularity: Granularity = 'month') {
+export function useMultiGenreSnapshots(selectedGenres: Genre[], risingThreshold: number = 20, granularity: Granularity = 'month', minDailyRevenue: number = 500) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [rawResults, setRawResults] = useState<{
@@ -254,15 +254,23 @@ export function useMultiGenreSnapshots(selectedGenres: Genre[], risingThreshold:
 
     const rows = rawResults.rows.map((row) => {
       const sortedMonths = Object.keys(row.revenueByMonth).sort();
+      const dailyRevenueByPeriod: Record<string, number> = {};
+      for (const m of sortedMonths) {
+        const days = daysInPeriod(m);
+        dailyRevenueByPeriod[m] = days > 0 ? (row.revenueByMonth[m] ?? 0) / days : 0;
+      }
       return {
         ...row,
-        risingStatus: computeRisingStatus(row.percentChanges, sortedMonths, risingThreshold),
+        risingStatus: computeRisingStatus(row.percentChanges, sortedMonths, risingThreshold, {
+          dailyRevenueByPeriod,
+          minDailyRevenue,
+        }),
         risingStatusDownloads: computeRisingStatus(row.downloadPercentChanges, sortedMonths, risingThreshold),
       };
     });
 
     return { rows, months: rawResults.months };
-  }, [rawResults, risingThreshold]);
+  }, [rawResults, risingThreshold, minDailyRevenue]);
 
   const refresh = () => {
     forceRefreshRef.current = true;

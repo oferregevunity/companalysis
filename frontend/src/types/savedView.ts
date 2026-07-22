@@ -15,6 +15,8 @@ export type SavedViewPayload = {
   /** @deprecated Preset payloads may still include this; clients normalize to risingRev / risingMatchAny. */
   rising?: string[];
   risingThreshold: number;
+  /** Minimum daily revenue ($/day) a base period must clear for revenue growth to count as rising. */
+  minDailyRevenue: number;
   favoritesOnly: boolean;
   dateFrom: string;
   dateTo: string;
@@ -31,6 +33,7 @@ export const DEFAULT_PAYLOAD: SavedViewPayload = {
   risingRev: [],
   risingDl: [],
   risingThreshold: 20,
+  minDailyRevenue: 500,
   favoritesOnly: false,
   dateFrom: '',
   dateTo: '',

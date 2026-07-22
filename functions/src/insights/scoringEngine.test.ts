@@ -22,13 +22,13 @@ describe('computeRevenueAcceleration', () => {
   });
 
   it('returns high score (>18) for strongly accelerating growth (+50% → +100% → +150%)', () => {
-    // Each period grows by an accelerating percentage
-    // base=1000, +50%=1500, +100%=3000, +150%=7500
+    // Each period grows by an accelerating percentage. Values are large enough
+    // that every base period clears the $500/day floor (~$15.5k/month).
     const data = {
-      '2024-01': 1000,
-      '2024-02': 1500,
-      '2024-03': 3000,
-      '2024-04': 7500,
+      '2024-01': 1_000_000,
+      '2024-02': 1_500_000,
+      '2024-03': 3_000_000,
+      '2024-04': 7_500_000,
     };
     const score = computeRevenueAcceleration(data);
     expect(score).toBeGreaterThan(18);
@@ -37,11 +37,12 @@ describe('computeRevenueAcceleration', () => {
   it('returns a positive but low score for steady +20% growth (no acceleration bonus)', () => {
     // The algorithm gives baseScore = weightedAvg/10, capped at 15.
     // For steady 20% MoM growth: weightedAvg = 20, baseScore = 2, no acceleration bonus.
+    // Above-floor revenue so the magnitude ramp leaves the score unchanged.
     const data = {
-      '2024-01': 1000,
-      '2024-02': 1200,
-      '2024-03': 1440,
-      '2024-04': 1728,
+      '2024-01': 1_000_000,
+      '2024-02': 1_200_000,
+      '2024-03': 1_440_000,
+      '2024-04': 1_728_000,
     };
     const score = computeRevenueAcceleration(data);
     expect(score).toBeGreaterThan(0);
@@ -59,43 +60,54 @@ describe('computeRevenueAcceleration', () => {
   });
 
   it('returns low score (<10) for decelerating growth', () => {
-    // Positive but slowing: +30%, +20%, +10%
+    // Positive but slowing: +30%, +20%, +10% (above-floor revenue).
     const data = {
-      '2024-01': 1000,
-      '2024-02': 1300,
-      '2024-03': 1560,
-      '2024-04': 1716,
+      '2024-01': 1_000_000,
+      '2024-02': 1_300_000,
+      '2024-03': 1_560_000,
+      '2024-04': 1_716_000,
     };
     const score = computeRevenueAcceleration(data);
     expect(score).toBeLessThan(10);
   });
 
   it('returns score capped at 25', () => {
-    // Extremely explosive growth
+    // Extremely explosive growth, above the daily-revenue floor.
     const data = {
-      '2024-01': 100,
-      '2024-02': 1000,
-      '2024-03': 10000,
-      '2024-04': 100000,
+      '2024-01': 100_000,
+      '2024-02': 1_000_000,
+      '2024-03': 10_000_000,
+      '2024-04': 100_000_000,
     };
     const score = computeRevenueAcceleration(data);
     expect(score).toBeLessThanOrEqual(25);
   });
 
-  it('handles zero previous value by treating change as +100%', () => {
+  it('returns 0 when the base period is 0 (zero-baseline no longer inflates)', () => {
+    // A $0 base gets magnitude weight 0, so the +100% jump contributes nothing.
     const data = {
       '2024-01': 0,
       '2024-02': 1000,
     };
     const score = computeRevenueAcceleration(data);
-    expect(score).toBeGreaterThan(0);
+    expect(score).toBe(0);
+  });
+
+  it('dampens growth off a sub-$500/day base but not off an above-floor base', () => {
+    // Same +100% → +150% shape; only the absolute level differs.
+    const belowFloor = { '2024-01': 3000, '2024-02': 6000, '2024-03': 15000 };
+    const aboveFloor = { '2024-01': 300_000, '2024-02': 600_000, '2024-03': 1_500_000 };
+    const low = computeRevenueAcceleration(belowFloor);
+    const high = computeRevenueAcceleration(aboveFloor);
+    expect(low).toBeLessThan(high);
+    expect(high).toBeGreaterThan(10);
   });
 
   it('returns a number within 0-25 range', () => {
     const data = {
-      '2024-01': 500,
-      '2024-02': 600,
-      '2024-03': 750,
+      '2024-01': 500_000,
+      '2024-02': 600_000,
+      '2024-03': 750_000,
     };
     const score = computeRevenueAcceleration(data);
     expect(score).toBeGreaterThanOrEqual(0);
@@ -147,11 +159,25 @@ describe('computeDownloadMomentum', () => {
     expect(score).toBeLessThanOrEqual(25);
   });
 
-  it('produces the same result as computeRevenueAcceleration for identical data', () => {
+  it('is NOT gated by the revenue floor — small values still score (unlike revenue acceleration)', () => {
+    // Download momentum ignores the $500/day revenue floor, so tiny values still
+    // score; the same values fed to revenue acceleration are dampened by the floor.
     const data = {
       '2024-01': 1000,
       '2024-02': 1500,
       '2024-03': 3000,
+    };
+    const dl = computeDownloadMomentum(data);
+    const rev = computeRevenueAcceleration(data);
+    expect(dl).toBeGreaterThan(0);
+    expect(rev).toBeLessThan(dl);
+  });
+
+  it('matches revenue acceleration when revenue is above the daily floor', () => {
+    const data = {
+      '2024-01': 1_000_000,
+      '2024-02': 1_500_000,
+      '2024-03': 3_000_000,
     };
     expect(computeDownloadMomentum(data)).toBe(computeRevenueAcceleration(data));
   });

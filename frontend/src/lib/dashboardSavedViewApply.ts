@@ -10,7 +10,7 @@ export function hasUrlViewState(search: string): boolean {
   if (getPresetIdFromSearch(search)) return true;
   const s = search.startsWith('?') ? search.slice(1) : search;
   const params = new URLSearchParams(s);
-  const keys = ['g', 's', 'q', 'sm', 'r', 'rr', 'rd', 'rt', 'fo', 'from', 'to', 'gr', 'mv', 'ps'];
+  const keys = ['g', 's', 'q', 'sm', 'r', 'rr', 'rd', 'rt', 'mdr', 'fo', 'from', 'to', 'gr', 'mv', 'ps'];
   return keys.some((k) => params.has(k));
 }
 
@@ -26,6 +26,7 @@ export function applySavedViewPayload(
     setSelectedRisingDl: (s: Set<RisingStatus>) => void;
     setRisingMatchAny: (v: boolean) => void;
     setRisingThreshold: (n: number) => void;
+    setMinDailyRevenue: (n: number) => void;
     setShowFavoritesOnly: (v: boolean) => void;
     setDateFrom: (v: string) => void;
     setDateTo: (v: string) => void;
@@ -77,6 +78,9 @@ export function applySavedViewPayload(
   setters.setSelectedRisingDl(new Set(dl));
   setters.setRisingMatchAny(matchAny);
   setters.setRisingThreshold(payload.risingThreshold);
+  setters.setMinDailyRevenue(
+    typeof payload.minDailyRevenue === 'number' ? payload.minDailyRevenue : 500
+  );
   setters.setShowFavoritesOnly(payload.favoritesOnly);
   setters.setGranularity(payload.granularity);
   setters.setDateFrom(payload.dateFrom);

@@ -195,6 +195,7 @@ export default function Dashboard() {
   const [risingMatchAny, setRisingMatchAny] = useState(false);
   const [risingMenuOpen, setRisingMenuOpen] = useState<null | 'rev' | 'dl'>(null);
   const [risingThreshold, setRisingThreshold] = useState(20);
+  const [minDailyRevenue, setMinDailyRevenue] = useState(500);
   const [showFavoritesOnly, setShowFavoritesOnly] = useState(false);
   const [dateFrom, setDateFrom] = useState<string>('');
   const [dateTo, setDateTo] = useState<string>('');
@@ -229,6 +230,7 @@ export default function Dashboard() {
         setSelectedRisingDl,
         setRisingMatchAny,
         setRisingThreshold,
+        setMinDailyRevenue,
         setShowFavoritesOnly,
         setDateFrom,
         setDateTo,
@@ -250,6 +252,7 @@ export default function Dashboard() {
       risingDl: [...selectedRisingDl],
       ...(risingMatchAny ? { risingMatchAny: true } : {}),
       risingThreshold,
+      minDailyRevenue,
       favoritesOnly: showFavoritesOnly,
       dateFrom,
       dateTo,
@@ -266,6 +269,7 @@ export default function Dashboard() {
     selectedRisingDl,
     risingMatchAny,
     risingThreshold,
+    minDailyRevenue,
     showFavoritesOnly,
     dateFrom,
     dateTo,
@@ -362,7 +366,7 @@ export default function Dashboard() {
     [genres, selectedIds]
   );
   const { scoreMap } = useAppScores(selectedGenres, granularity);
-  const { rows: data, months, loading: dataLoading, error, refresh } = useMultiGenreSnapshots(selectedGenres, risingThreshold, granularity);
+  const { rows: data, months, loading: dataLoading, error, refresh } = useMultiGenreSnapshots(selectedGenres, risingThreshold, granularity, minDailyRevenue);
 
   const filteredMonths = useMemo(() => {
     return months.filter(m => {
@@ -999,6 +1003,12 @@ export default function Dashboard() {
             <input type="number" value={risingThreshold} onChange={(e) => setRisingThreshold(Math.max(0, Number(e.target.value)))}
               className="w-14 text-[12px] border border-[#dadce0] rounded-md px-2 py-[4px] bg-white text-[#3c4043] text-center focus:outline-none focus:border-primary-500" />
             <span className="text-[11px] text-[#80868b]">%</span>
+          </div>
+
+          <div className="inline-flex items-center gap-1" title="Ignore revenue rises below this daily revenue floor (applied from the base period).">
+            <span className="text-[11px] text-[#80868b]">Min $/day:</span>
+            <input type="number" value={minDailyRevenue} onChange={(e) => setMinDailyRevenue(Math.max(0, Number(e.target.value)))}
+              className="w-20 text-[12px] border border-[#dadce0] rounded-md px-2 py-[4px] bg-white text-[#3c4043] text-center focus:outline-none focus:border-primary-500" />
           </div>
         </div>
       )}
