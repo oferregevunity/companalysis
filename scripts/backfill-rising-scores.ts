@@ -29,7 +29,21 @@ import { loadGenreAppData } from '../functions/src/insights/pipeline';
 import { computeRisingStarScore } from '../functions/src/insights/scoringEngine';
 
 const DRY_RUN = process.argv.includes('--dry-run');
-const BATCH_SIZE = 400;
+const BATCH_SIZE = 200;
+
+/** Commit a batch with a few retries — large genres occasionally hit a
+ * transient Firestore "Deadline exceeded" that isn't auto-retried. */
+async function commitWithRetry(batch: admin.firestore.WriteBatch, attempts = 4): Promise<void> {
+  for (let i = 1; i <= attempts; i++) {
+    try {
+      await batch.commit();
+      return;
+    } catch (err) {
+      if (i === attempts) throw err;
+      await new Promise((r) => setTimeout(r, 1000 * i));
+    }
+  }
+}
 
 admin.initializeApp({
   projectId:
@@ -95,7 +109,7 @@ async function recomputeLatest(
         computedAt: Timestamp.now(),
       });
     }
-    await batch.commit();
+    await commitWithRetry(batch);
   }
 
   return { status: `rewrote ${scored.length} scores in ${insightDoc.id}` };
