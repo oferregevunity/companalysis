@@ -1005,7 +1005,7 @@ export default function Dashboard() {
             <span className="text-[11px] text-[#80868b]">%</span>
           </div>
 
-          <div className="inline-flex items-center gap-1" title="Ignore revenue rises below this daily revenue floor (applied from the base period).">
+          <div className="inline-flex items-center gap-1" title="An app must earn at least this much per day (latest period) to be marked revenue-rising.">
             <span className="text-[11px] text-[#80868b]">Min $/day:</span>
             <input type="number" value={minDailyRevenue} onChange={(e) => setMinDailyRevenue(Math.max(0, Number(e.target.value)))}
               className="w-20 text-[12px] border border-[#dadce0] rounded-md px-2 py-[4px] bg-white text-[#3c4043] text-center focus:outline-none focus:border-primary-500" />

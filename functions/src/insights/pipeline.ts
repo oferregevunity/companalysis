@@ -14,7 +14,7 @@ interface GenreConfig {
   name: string;
 }
 
-async function loadGenreAppData(
+export async function loadGenreAppData(
   genreId: string,
   granularity: 'month' | 'week'
 ): Promise<{ apps: AppScoreInput[]; periods: string[]; storeIds: Map<string, { iosAppId: string | null; androidAppId: string | null }> }> {

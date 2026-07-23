@@ -27,10 +27,10 @@ function computePercentChanges(
 
 /**
  * Optional absolute-magnitude gate for the rising streak. When both
- * `dailyRevenueByPeriod` and `minDailyRevenue` are supplied, a period-over-period
- * change only counts toward a streak if its BASE (earlier) period's daily revenue
- * cleared the floor. Omit `opts` (e.g. for the downloads axis) to keep the
- * percentage-only behavior.
+ * `dailyRevenueByPeriod` and `minDailyRevenue` are supplied, an app must earn at
+ * least the floor in its LATEST period to be marked rising at all — otherwise it
+ * returns 'NOT' regardless of percentage growth. Omit `opts` (e.g. for the
+ * downloads axis) to keep the percentage-only behavior.
  */
 export function computeRisingStatus(
   percentChanges: Record<string, number | null>,
@@ -43,6 +43,13 @@ export function computeRisingStatus(
   const dailyByPeriod = opts?.dailyRevenueByPeriod;
   const gated = floor !== undefined && floor > 0 && dailyByPeriod !== undefined;
 
+  // Eligibility gate: the app must currently earn at least the floor (latest
+  // period). Small apps are excluded no matter how fast they grew.
+  if (gated && sorted.length > 0) {
+    const latest = sorted[sorted.length - 1];
+    if ((dailyByPeriod![latest] ?? 0) < floor!) return 'NOT';
+  }
+
   for (const level of [3, 2, 1] as const) {
     if (sorted.length < level + 1) continue;
     let match = true;
@@ -52,13 +59,6 @@ export function computeRisingStatus(
       if (pct === null || pct === undefined || pct < threshold) {
         match = false;
         break;
-      }
-      if (gated) {
-        const basePeriod = sorted[sorted.length - 2 - i];
-        if ((dailyByPeriod![basePeriod] ?? 0) < floor!) {
-          match = false;
-          break;
-        }
       }
     }
     if (match) return `Rising ${level}` as RisingStatus;

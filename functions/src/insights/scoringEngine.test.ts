@@ -50,11 +50,12 @@ describe('computeRevenueAcceleration', () => {
   });
 
   it('returns 0 for declining revenue', () => {
+    // Above the floor, so the decline itself (not the gate) yields 0.
     const data = {
-      '2024-01': 1000,
-      '2024-02': 900,
-      '2024-03': 800,
-      '2024-04': 700,
+      '2024-01': 2_000_000,
+      '2024-02': 1_800_000,
+      '2024-03': 1_600_000,
+      '2024-04': 1_400_000,
     };
     expect(computeRevenueAcceleration(data)).toBe(0);
   });
@@ -83,24 +84,24 @@ describe('computeRevenueAcceleration', () => {
     expect(score).toBeLessThanOrEqual(25);
   });
 
-  it('returns 0 when the base period is 0 (zero-baseline no longer inflates)', () => {
-    // A $0 base gets magnitude weight 0, so the +100% jump contributes nothing.
-    const data = {
-      '2024-01': 0,
-      '2024-02': 1000,
-    };
-    const score = computeRevenueAcceleration(data);
-    expect(score).toBe(0);
+  it('returns 0 when the latest period is below the $500/day floor', () => {
+    // Growing fast in %, but still tiny (~$290/day latest) — excluded.
+    const data = { '2024-01': 3000, '2024-02': 6000, '2024-03': 9000 };
+    expect(computeRevenueAcceleration(data)).toBe(0);
   });
 
-  it('dampens growth off a sub-$500/day base but not off an above-floor base', () => {
-    // Same +100% → +150% shape; only the absolute level differs.
-    const belowFloor = { '2024-01': 3000, '2024-02': 6000, '2024-03': 15000 };
-    const aboveFloor = { '2024-01': 300_000, '2024-02': 600_000, '2024-03': 1_500_000 };
-    const low = computeRevenueAcceleration(belowFloor);
-    const high = computeRevenueAcceleration(aboveFloor);
-    expect(low).toBeLessThan(high);
-    expect(high).toBeGreaterThan(10);
+  it('counts growth once the latest period clears the floor, even from a $0 base', () => {
+    // $0 -> ~$34k/day: the app is now well above the floor, so it scores.
+    const data = { '2024-01': 0, '2024-02': 1_000_000 };
+    expect(computeRevenueAcceleration(data)).toBeGreaterThan(0);
+  });
+
+  it('excludes a tiny fast-grower but includes a large one with the same %', () => {
+    // Identical +100% → +150% shape; only the current level differs.
+    const tiny = { '2024-01': 3000, '2024-02': 6000, '2024-03': 15000 };       // ~$484/day latest
+    const large = { '2024-01': 300_000, '2024-02': 600_000, '2024-03': 1_500_000 }; // ~$48k/day latest
+    expect(computeRevenueAcceleration(tiny)).toBe(0);
+    expect(computeRevenueAcceleration(large)).toBeGreaterThan(10);
   });
 
   it('returns a number within 0-25 range', () => {

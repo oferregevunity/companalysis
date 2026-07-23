@@ -39,8 +39,8 @@ export interface ScoredApp {
 // Internal helpers
 // ---------------------------------------------------------------------------
 
-/** Minimum daily revenue a base period must clear for its growth to count fully.
- * Below this, the revenue-acceleration contribution ramps linearly down to 0. */
+/** Minimum CURRENT daily revenue (latest period) an app must earn for its
+ * revenue growth to count. Below this, Revenue Acceleration is 0 outright. */
 const MIN_DAILY_REVENUE = 500;
 
 /** Number of days in a period key ("2025-W03" → 7, "2025-01" → days in that month).
@@ -74,31 +74,18 @@ function percentChanges(
 }
 
 /**
- * Core acceleration math shared by revenue and downloads.
- *
- * `magWeightByPeriod` (keyed by the later period of each change, matching
- * `percentChanges`) is an optional 0-1 multiplier that scales how much each
- * change contributes. When omitted, every change counts fully — identical to
- * the original percentage-only behavior.
+ * Core acceleration math shared by revenue and downloads: a recency-weighted
+ * average of period-over-period percent changes, plus a bonus when the growth
+ * is accelerating. Purely percentage-based.
  */
-function accelerationScore(
-  valuesByPeriod: Record<string, number>,
-  magWeightByPeriod?: Record<string, number>
-): number {
+function accelerationScore(valuesByPeriod: Record<string, number>): number {
   const changes = percentChanges(valuesByPeriod);
   if (changes.length === 0) return 0;
 
-  const recencyWeights = changes.map((_, i) => i + 1);
-  const totalRecency = recencyWeights.reduce((a, b) => a + b, 0);
-
-  const magFor = (period: string) =>
-    magWeightByPeriod ? magWeightByPeriod[period] ?? 0 : 1;
-
+  const weights = changes.map((_, i) => i + 1);
+  const totalWeight = weights.reduce((a, b) => a + b, 0);
   const weightedAvg =
-    changes.reduce(
-      (sum, c, i) => sum + c.pctChange * recencyWeights[i] * magFor(c.period),
-      0
-    ) / totalRecency;
+    changes.reduce((sum, c, i) => sum + c.pctChange * weights[i], 0) / totalWeight;
 
   if (weightedAvg <= 0) return 0;
 
@@ -111,13 +98,6 @@ function accelerationScore(
     accelerationBonus = (accelerating / (changes.length - 1)) * 10;
   }
 
-  // Scale the acceleration bonus by the same recency-weighted magnitude so a
-  // fully sub-floor app can't earn points purely from an accelerating shape.
-  const magFactor =
-    changes.reduce((s, c, i) => s + magFor(c.period) * recencyWeights[i], 0) /
-    totalRecency;
-  accelerationBonus *= magFactor;
-
   const baseScore = Math.min(weightedAvg / 10, 15);
   const raw = baseScore + accelerationBonus;
   return Math.min(Math.round(raw * 10) / 10, 25);
@@ -127,26 +107,24 @@ function accelerationScore(
 // Sub-Score 1: Revenue Acceleration (0-25)
 // ---------------------------------------------------------------------------
 
+// Gated by the app's CURRENT revenue level: unless the latest period earns at
+// least $500/day, revenue growth doesn't count at all (score 0). This keeps
+// tiny apps out no matter how fast they grew in percentage terms.
 export function computeRevenueAcceleration(revenueByPeriod: Record<string, number>): number {
-  // Weight each change by how far its BASE (earlier) period cleared the
-  // $500/day floor: 0 below $0, ramping to full at MIN_DAILY_REVENUE. A $0 base
-  // gets weight 0, so the +100% zero-baseline case no longer inflates the score.
   const sorted = Object.keys(revenueByPeriod).sort();
-  const magWeightByPeriod: Record<string, number> = {};
-  for (let i = 1; i < sorted.length; i++) {
-    const basePeriod = sorted[i - 1];
-    const baseDaily = revenueByPeriod[basePeriod] / daysInPeriod(basePeriod);
-    magWeightByPeriod[sorted[i]] = Math.max(0, Math.min(baseDaily / MIN_DAILY_REVENUE, 1));
-  }
-  return accelerationScore(revenueByPeriod, magWeightByPeriod);
+  if (sorted.length === 0) return 0;
+  const latest = sorted[sorted.length - 1];
+  const latestDaily = revenueByPeriod[latest] / daysInPeriod(latest);
+  if (latestDaily < MIN_DAILY_REVENUE) return 0;
+  return accelerationScore(revenueByPeriod);
 }
 
 // ---------------------------------------------------------------------------
 // Sub-Score 2: Download Momentum (0-25)
 // ---------------------------------------------------------------------------
 
-// Same shape as revenue acceleration, but WITHOUT the revenue magnitude gate —
-// downloads are counted on percentage change alone (revenue-only floor, for now).
+// Same algorithm as revenue acceleration, but WITHOUT the revenue floor —
+// downloads are counted on percentage change alone (revenue-only floor).
 export function computeDownloadMomentum(downloadsByPeriod: Record<string, number>): number {
   return accelerationScore(downloadsByPeriod);
 }
