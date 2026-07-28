@@ -39,9 +39,10 @@ export async function analyzeSingleCreativeVideo(params: {
   const appName = typeof nameData?.name === 'string' && nameData.name ? nameData.name : c.appId;
 
   // On-demand is a single user-requested video, so push to the inline ceiling
-  // (~14 MB raw ≈ 18.6 MB base64, under Vertex's ~20 MB request cap) rather than
-  // the batch job's tighter 12 MB budget. Videos past this can't go inline.
-  const ON_DEMAND_MAX_BYTES = 14 * 1024 * 1024;
+  // rather than the batch job's tighter 12 MB budget. 14.5 MB raw ≈ 19.3 MB
+  // base64, just under Vertex's ~20 MB request cap — enough to clear the common
+  // ~14 MB / 30s UA creative. Videos past this can't go inline (need GCS fileData).
+  const ON_DEMAND_MAX_BYTES = 14.5 * 1024 * 1024;
   const { analyses, errors } = await analyzeWinnerVideos(
     [
       {
