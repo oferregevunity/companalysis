@@ -53,6 +53,14 @@ export interface FetchGenreDeps {
   genre: GenreDoc;
   weekStart: string;
   weekEnd: string;
+  /**
+   * Optional Sensor Tower fetch date range. Defaults to `weekStart`/`weekEnd`.
+   * Lets a caller pull a wider trailing window (to smooth Sensor Tower's
+   * per-app indexing coverage) while docs are still stamped with the canonical
+   * week key derived from `weekStart`.
+   */
+  fetchStartDate?: string;
+  fetchEndDate?: string;
   authToken: string;
   resolveApps: (genreId: string, topN: number, watchlist: string[]) => Promise<string[]>;
   fetchCreatives: (params: {
@@ -179,6 +187,9 @@ export async function fetchCreativesForGenreWithDeps(deps: FetchGenreDeps): Prom
   } = deps;
   const country = genre.country ?? 'US';
   const capturedWeek = weekKeyFromStart(weekStart);
+  // Fetch range can be wider than the canonical week (see FetchGenreDeps).
+  const fetchStartDate = deps.fetchStartDate ?? weekStart;
+  const fetchEndDate = deps.fetchEndDate ?? weekEnd;
   const partialErrors: string[] = [];
 
   const apps = await resolveApps(genre.id, topN, watchlist);
@@ -215,8 +226,8 @@ export async function fetchCreativesForGenreWithDeps(deps: FetchGenreDeps): Prom
           appId,
           network,
           country,
-          startDate: weekStart,
-          endDate: weekEnd,
+          startDate: fetchStartDate,
+          endDate: fetchEndDate,
         });
         outcomes[myIndex] = { ok: true, raws };
       } catch (err) {

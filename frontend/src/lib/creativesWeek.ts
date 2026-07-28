@@ -30,15 +30,19 @@ export function mondayOfWeekContaining(d: Date): Date {
 }
 
 /**
- * Latest creative week key: the most recently *completed* Mon–Sun week in UTC.
+ * Latest creative week key: a recently *completed* Mon–Sun week in UTC, with a
+ * one-week lag buffer.
  *
- * We target the week containing (today − 7 days) so the week boundary is
- * always in the past. Sensor Tower only indexes creatives for completed
- * weeks; defaulting to the current in-progress week returned zero results.
+ * We target the week containing (today − 14 days) rather than (today − 7).
+ * Sensor Tower's ad-intel index lags real time by several days, so the week
+ * that ended a day or two ago is only partially indexed: heavy advertisers show
+ * up while many mid-size titles still read as 0, producing erratic
+ * zero-vs-hundreds counts. Backing off an extra week lands on a week that is
+ * reliably indexed for essentially all advertisers.
  */
 export function getLatestCreativeWeek(): string {
   const now = new Date();
-  const lastWeekAnchor = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - 7));
+  const lastWeekAnchor = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - 14));
   const monday = mondayOfWeekContaining(lastWeekAnchor);
   return weekKeyFromStart(formatUtcYmd(monday));
 }
