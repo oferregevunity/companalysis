@@ -1,4 +1,8 @@
+import { VertexAI } from '@google-cloud/vertexai';
 import { HOOK_TYPES, type HookType } from './geminiClient';
+
+const PROJECT_ID = process.env.GCLOUD_PROJECT || process.env.GCP_PROJECT || '';
+const LOCATION = 'us-central1';
 
 /**
  * Per-video creative analysis, structured around the "Iteration Loop" framework
@@ -238,4 +242,28 @@ export function parseVideoAnalysisResponse(raw: string, creativeId: string): Vid
   } catch {
     return null;
   }
+}
+
+/** Runs a per-video prompt against a staged `gs://` URI. Injected for tests. */
+export type VideoGenerate = (prompt: string, gsUri: string, mimeType: string) => Promise<string>;
+
+/** Default multimodal generate via Vertex Gemini (video part + text prompt). */
+export const vertexVideoGenerate: VideoGenerate = async (prompt, gsUri, mimeType) => {
+  const vertexAI = new VertexAI({ project: PROJECT_ID, location: LOCATION });
+  const model = vertexAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
+  const result = await model.generateContent({
+    contents: [{ role: 'user', parts: [{ fileData: { fileUri: gsUri, mimeType } }, { text: prompt }] }],
+  });
+  return result.response.candidates?.[0]?.content?.parts?.[0]?.text || '';
+};
+
+/** Analyze one staged video. Returns null when the model output can't be parsed. */
+export async function analyzeCreativeVideo(
+  input: VideoAnalysisInput,
+  gsUri: string,
+  mimeType: string,
+  generate: VideoGenerate = vertexVideoGenerate,
+): Promise<VideoAnalysis | null> {
+  const raw = await generate(buildVideoAnalysisPrompt(input), gsUri, mimeType);
+  return parseVideoAnalysisResponse(raw, input.creativeId);
 }

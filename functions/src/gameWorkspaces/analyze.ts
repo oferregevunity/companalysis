@@ -6,6 +6,8 @@ export interface AnalyzeWorkspaceResult {
   creativeCount: number;
   scoredCount: number;
   insightsGenerated: boolean;
+  /** Deep video analyses written for the top winner videos (non-fatal second pass). */
+  videoAnalysisCount?: number;
   geminiError?: string;
 }
 
@@ -126,11 +128,84 @@ export async function analyzeGameWorkspace(params: {
     },
   });
 
+  // Second pass: deep video analysis of the top-N winner videos shown in the UI.
+  // Non-fatal — any failure here leaves the (already-written) insight doc intact.
+  let videoAnalysisCount = 0;
+  try {
+    videoAnalysisCount = await analyzeWorkspaceWinnerVideos({
+      insightDocRef,
+      focusAppId,
+      week,
+      creativesByDocId,
+    });
+  } catch (err) {
+    console.error('workspace video analysis failed (non-fatal)', err);
+  }
+
   return {
     success: insightResult.ok,
     creativeCount: creatives.length,
     scoredCount: scoreResult.scored,
     insightsGenerated: insightResult.ok,
+    videoAnalysisCount,
     ...(insightResult.geminiError ? { geminiError: insightResult.geminiError } : {}),
   };
+}
+
+/**
+ * Reads the just-written winners off the insight doc, video-analyzes the top-N
+ * that are videos, and merges `videoAnalyses` back onto the doc. Returns the
+ * number of analyses written. Isolated + lazily-imported so the heavy Vertex /
+ * Storage deps only load when a workspace analysis actually runs.
+ */
+async function analyzeWorkspaceWinnerVideos(params: {
+  insightDocRef: FirebaseFirestore.DocumentReference;
+  focusAppId: string;
+  week: string;
+  creativesByDocId: Map<string, StoredCreative>;
+}): Promise<number> {
+  const { insightDocRef, focusAppId, week, creativesByDocId } = params;
+  const [{ getStorage }, { analyzeWinnerVideos }] = await Promise.all([
+    import('firebase-admin/storage'),
+    import('../creativeInsights/videoPipeline'),
+  ]);
+
+  const snap = await insightDocRef.get();
+  const doc = snap.data() as
+    | { winners?: Array<{ creativeId: string; appId: string; appName?: string; rank: number }> }
+    | undefined;
+  const winners = doc?.winners ?? [];
+  if (winners.length === 0) return 0;
+
+  // App display names for the prompt — the doc's winners already carry appName;
+  // fall back to the appId when a legacy doc omits it.
+  const winnerVideos = winners.map(w => {
+    const c = creativesByDocId.get(w.creativeId);
+    return {
+      creativeId: w.creativeId,
+      appId: w.appId,
+      appName: w.appName?.trim() || w.appId,
+      rank: w.rank,
+      format: c?.format ?? 'unknown',
+      mediaUrl: c?.mediaUrl ?? null,
+      videoDurationSec: c?.videoDurationSec ?? null,
+      title: c?.title ?? null,
+      message: c?.message ?? null,
+    };
+  });
+
+  const { analyses } = await analyzeWinnerVideos(winnerVideos, {
+    bucket: getStorage().bucket(),
+    week,
+    focusAppId,
+  });
+
+  if (analyses.length > 0) {
+    const { FieldValue } = await import('firebase-admin/firestore');
+    await insightDocRef.set(
+      { videoAnalyses: analyses, videoAnalyzedAt: FieldValue.serverTimestamp() },
+      { merge: true },
+    );
+  }
+  return analyses.length;
 }

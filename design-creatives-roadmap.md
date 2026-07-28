@@ -81,8 +81,18 @@ Rewrite `buildCreativePrompt` around the **Iteration Loop** anatomy + the
   UGC, VO, end twist, store logo, …) → feeds concept/iteration briefs (#3).
 - **Predicted hook / hold strength** (1–5, explicitly a prediction).
 
-Extends `CreativeTag` (adds segments + motivations + iterableElements), the
-detail modal, and the filter rail (filter by motivation / element).
+Stored additively as `videoAnalyses[]` on the insight doc (separate from the
+metadata-only `creativeTags`), so nothing regresses. Consumed by the detail
+modal (#8) and, later, the filter rail (filter by motivation / element).
+
+**Deploy-time prerequisites (NOT verifiable locally — confirm on first run):**
+- The project needs a default GCS bucket; `getStorage().bucket()` must resolve.
+- The **Vertex AI service agent** must have read access to that bucket, or the
+  `fileData` gs:// read fails. If it does, the second pass logs and no-ops
+  (non-fatal) — the insight doc still writes.
+- Staged objects are deleted after each analysis; add a bucket lifecycle rule on
+  `tmp/creative-analysis/` as a backstop.
+- Cost: ≤10 short videos × 1 Gemini video call per workspace analysis.
 
 ---
 
