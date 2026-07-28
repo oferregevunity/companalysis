@@ -1,6 +1,6 @@
 import type { JoinedCreative } from '../hooks/useCreativesForGenre';
 import type { AppNameMapEntry } from '../hooks/useAppNames';
-import type { CreativeTag } from '../types/creatives';
+import type { CreativeTag, GeneratedConcept } from '../types/creatives';
 import { durationBucket } from './creativeBuckets';
 
 function formatLabel(f: JoinedCreative['format']): string {
@@ -50,6 +50,39 @@ export function buildBrief(
     lines.push(whyItWins);
   }
 
+  lines.push('');
+  return lines.join('\n');
+}
+
+/**
+ * Build a markdown Video Brief from an AI-generated concept, mapped onto the
+ * deck's brief template (Concept+Motivation / Hook / Visual style / Structure /
+ * Length / References). `refNames` resolves reference creativeIds to game names
+ * for the human reader; unresolved ids fall back to the raw id.
+ */
+export function buildConceptBrief(
+  concept: GeneratedConcept,
+  focusGameName: string,
+  refNames: Map<string, string>,
+): string {
+  const lines: string[] = [];
+  lines.push(`# ${concept.title}`);
+  lines.push(`_${concept.tier} concept for ${focusGameName}_`);
+  lines.push('');
+  if (concept.motivation) lines.push(`- **Motivation:** ${concept.motivation}`);
+  if (concept.hook) lines.push(`- **Hook (0–3s):** ${concept.hook}`);
+  if (concept.visualStyle) lines.push(`- **Visual style:** ${concept.visualStyle}`);
+  if (concept.structure) lines.push(`- **Structure:** ${concept.structure}`);
+  if (concept.lengthSec != null) lines.push(`- **Length:** ${concept.lengthSec}s`);
+  if (concept.references.length > 0) {
+    const refs = concept.references.map((id) => refNames.get(id) ?? id);
+    lines.push(`- **References:** ${[...new Set(refs)].join(', ')}`);
+  }
+  if (concept.rationale) {
+    lines.push('');
+    lines.push('## Why it should work');
+    lines.push(concept.rationale);
+  }
   lines.push('');
   return lines.join('\n');
 }

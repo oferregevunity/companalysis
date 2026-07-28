@@ -2,6 +2,12 @@ import type { CreativeFormat, CreativeTag, HookType, QueryableAdNetwork } from '
 import type { JoinedCreative } from '../hooks/useCreativesForGenre';
 import type { AppNameMapEntry } from '../hooks/useAppNames';
 
+/** A creative docId is `${appId}__${creativeKey}`; the appId is everything before the first `__`. */
+export function appIdFromCreativeId(creativeId: string): string {
+  const i = creativeId.indexOf('__');
+  return i > 0 ? creativeId.slice(0, i) : creativeId;
+}
+
 /**
  * The gallery's filter state. Purely presentational — every field is a control
  * surfaced in the redesign's left filter rail, the header, or the band's action

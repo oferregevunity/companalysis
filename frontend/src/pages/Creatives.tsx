@@ -19,6 +19,7 @@ import { WeeksReadBand, type GapRow, type RisingRow } from '../components/creati
 import { GalleryTabs, type GalleryTab } from '../components/creatives/GalleryTabs';
 import { CreativeEmptyState, type ActiveFilterDesc, type RecoveryAction } from '../components/creatives/CreativeEmptyState';
 import { CreativeDetailModal } from '../components/creatives/CreativeDetailModal';
+import { ConceptGeneratorModal } from '../components/creatives/ConceptGeneratorModal';
 import { durationBucket } from '../lib/creativeBuckets';
 import {
   aggregateHooksThemes,
@@ -232,6 +233,7 @@ export default function Creatives() {
   const [detailDocId, setDetailDocId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<GalleryTab>('all');
   const [editSetOpen, setEditSetOpen] = useState(false);
+  const [conceptsOpen, setConceptsOpen] = useState(false);
   const pageRef = useRef<HTMLDivElement>(null);
 
   const latestWeek = useMemo(() => getLatestCreativeWeek(), []);
@@ -736,6 +738,7 @@ export default function Creatives() {
         onCountryChange={setCountry}
         onRefresh={refreshCreatives}
         onReanalyze={() => startAnalysis(true)}
+        onGenerateConcepts={() => setConceptsOpen(true)}
         onEditSet={() => setEditSetOpen(true)}
         onChangeGame={clearFocusApp}
       />
@@ -841,6 +844,19 @@ export default function Creatives() {
         country={country}
         scopeId={scopeId}
         week={latestWeek}
+      />
+
+      <ConceptGeneratorModal
+        open={conceptsOpen}
+        onClose={() => setConceptsOpen(false)}
+        insightDoc={insightDoc}
+        focusAppId={focusAppId}
+        focusGameName={focusApp.name}
+        scopeId={scopeId}
+        week={latestWeek}
+        gaps={gapRows.map((g) => g.key)}
+        rising={risingData.rows.filter((r) => r.missing).map((r) => r.label)}
+        appNames={appNames}
       />
     </div>
   );

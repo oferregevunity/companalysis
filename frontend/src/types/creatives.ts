@@ -190,7 +190,29 @@ export interface CreativeInsightDoc {
   creativeTags?: CreativeTag[];
   /** Deep video analyses for top winner videos. Absent until the video pass runs. */
   videoAnalyses?: VideoAnalysis[];
+  /** AI-generated creative concepts (Ideation Strategy). Absent until generated on-demand. */
+  concepts?: GeneratedConcept[];
+  conceptsGeneratedAt?: { seconds: number; nanoseconds: number } | Date;
   geminiError?: string;
+}
+
+/** Ideation tiers, proven → experimental. Mirrors `IDEATION_TIERS` in `functions/src/concepts/geminiClient.ts`. */
+export const IDEATION_TIERS = ['Direct Copy', 'Iteration', 'Strategic', 'Experimental'] as const;
+export type IdeationTier = (typeof IDEATION_TIERS)[number];
+
+/** One AI-generated concept mapped onto the deck's Video Brief. Mirrors `GeneratedConcept` in the backend. */
+export interface GeneratedConcept {
+  title: string;
+  tier: IdeationTier;
+  motivation: string;
+  hook: string;
+  visualStyle: string;
+  /** Intro / gameplay / end-screen guidance. */
+  structure: string;
+  lengthSec: number | null;
+  /** creativeIds (docIds) of the competitor creatives that inspired this concept. */
+  references: string[];
+  rationale: string;
 }
 
 /** One rising cross-genre concept. Mirrors `NamedRisingConcept` in `functions/src/marketPulse/geminiClient.ts`. */

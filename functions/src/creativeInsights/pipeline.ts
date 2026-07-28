@@ -36,6 +36,12 @@ export interface CreativeInsightDoc {
    * `analyzeGameWorkspace`, keyed by creativeId (docId).
    */
   videoAnalyses?: VideoAnalysis[];
+  /**
+   * AI-generated creative concepts for the focus game (Ideation Strategy). Written
+   * on-demand by `generateWorkspaceConcepts`, additive + optional. Regenerating
+   * overwrites the whole array.
+   */
+  concepts?: import('../concepts/geminiClient').GeneratedConcept[];
   geminiError?: string;
 }
 

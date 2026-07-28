@@ -20,6 +20,7 @@ export interface CreativesHeaderProps {
   onCountryChange: (country: string) => void;
   onRefresh: () => void;
   onReanalyze: () => void;
+  onGenerateConcepts: () => void;
   onEditSet: () => void;
   onChangeGame: () => void;
 }
@@ -53,6 +54,7 @@ export function CreativesHeader({
   onCountryChange,
   onRefresh,
   onReanalyze,
+  onGenerateConcepts,
   onEditSet,
   onChangeGame,
 }: CreativesHeaderProps) {
@@ -122,6 +124,14 @@ export function CreativesHeader({
             className="rounded-lg border border-line bg-surface px-3 py-[5px] text-xs font-medium text-ink-2 hover:bg-[#faf9fe] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:opacity-50"
           >
             Refresh
+          </button>
+          <button
+            type="button"
+            onClick={onGenerateConcepts}
+            title="Turn the analyzed winners into ready-to-brief concepts"
+            className="rounded-lg border border-line bg-surface px-3 py-[5px] text-xs font-medium text-ink-2 hover:bg-[#faf9fe] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+          >
+            ✨ Concepts
           </button>
           <button
             type="button"

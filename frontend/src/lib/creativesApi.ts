@@ -1,5 +1,5 @@
 import { auth } from './firebase';
-import type { VideoAnalysis } from '../types/creatives';
+import type { VideoAnalysis, GeneratedConcept } from '../types/creatives';
 
 const FUNCTION_BASE =
   (import.meta.env.VITE_CREATIVES_FUNCTION_URL as string | undefined)?.replace(/\/$/, '') ||
@@ -187,6 +187,19 @@ export function analyzeCreativeVideo(params: {
   creativeId: string;
 }): Promise<{ ok: boolean; analysis: VideoAnalysis | null; reason?: string }> {
   return callFunction('creatives/analyze-video', params);
+}
+
+/** On-demand AI concept generation for a workspace (grounded in analyzed competitor videos). */
+export function generateWorkspaceConcepts(params: {
+  scopeId: string;
+  week: string;
+  focusAppId: string;
+  focusGameName: string;
+  gaps?: string[];
+  rising?: string[];
+  count?: number;
+}): Promise<{ ok: boolean; concepts: GeneratedConcept[]; reason?: string; geminiError?: string }> {
+  return callFunction('creatives/generate-concepts', params);
 }
 
 export function getWatchlistApps(): Promise<{ appIds: string[] }> {

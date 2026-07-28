@@ -595,6 +595,36 @@ export const compAnalysisApi = onRequest(
           return sendSuccess(res, result);
         }
 
+        case 'creatives/generate-concepts': {
+          const { scopeId, week, focusAppId, focusGameName, gaps, rising, count } = req.body || {};
+          if (
+            !scopeId ||
+            typeof scopeId !== 'string' ||
+            !week ||
+            typeof week !== 'string' ||
+            !focusAppId ||
+            typeof focusAppId !== 'string' ||
+            !focusGameName ||
+            typeof focusGameName !== 'string'
+          ) {
+            return sendError(res, 400, 'scopeId, week, focusAppId, and focusGameName are required');
+          }
+          const asStrings = (v: unknown): string[] | undefined =>
+            Array.isArray(v) ? v.filter((s): s is string => typeof s === 'string' && s.length > 0) : undefined;
+          const countNum = typeof count === 'number' && count >= 1 && count <= 10 ? Math.round(count) : undefined;
+          const { generateWorkspaceConcepts } = await import('./gameWorkspaces/generateConcepts');
+          const result = await generateWorkspaceConcepts({
+            scopeId,
+            week,
+            focusAppId,
+            focusGameName,
+            gaps: asStrings(gaps),
+            rising: asStrings(rising),
+            count: countNum,
+          });
+          return sendSuccess(res, result);
+        }
+
         case 'games/market-opportunity': {
           const { focusAppId, apps, category, androidCategory, primaryCountry } = req.body || {};
           if (

@@ -2,7 +2,8 @@
 
 **Date:** 2026-07-28
 **Status:** In progress. **Shipped + deployed 2026-07-28:** #1, the video
-foundation + slide-14 overhaul, and #8. **Next:** #3 (concept generator).
+foundation + slide-14 overhaul, and #8. **#3 concept generator built** (both
+slices; not yet deployed). **Next:** #2 (competitor new-winner alerts).
 **Context:** Builds on the game-workspace flow ([design-game-competitor-analysis.md](design-game-competitor-analysis.md)).
 
 ## Progress
@@ -13,8 +14,10 @@ foundation + slide-14 overhaul, and #8. **Next:** #3 (concept generator).
   by score; deployed; verified in prod
 - [x] **#8 On-demand per-creative video analysis** — "Analyze this video" in the
   detail modal; deployed (`compAnalysisApi` + hosting)
-- [ ] #3 AI Concept Generator (next — grounded in deck slide 15 Ideation Strategy)
-- [ ] #2 Competitor new-winner alerts (blocked on delivery-channel decision)
+- [x] **#3 AI Concept Generator** — slice 1 (pure core) + slice 2 (route +
+  `ConceptGeneratorModal`, header entry point); grounded in analyzed competitor
+  videos; concepts persisted on the insight doc. Built, not yet deployed.
+- [ ] #2 Competitor new-winner alerts (next — blocked on delivery-channel decision)
 - [ ] #4 Variant grouping
 - [ ] #5 Side-by-side compare
 - [ ] #6 Week-over-week trend
