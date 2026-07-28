@@ -100,6 +100,12 @@ export interface RawCreative {
   mediaUrl: string | null;
   previewUrl: string | null;
   thumbnailUrl: string | null;
+  /**
+   * Playable creatives only: the interactive HTML entry point
+   * (`creatives[].html_url`). `text/html`, iframe-embeddable. Null for
+   * video/image creatives (their `mediaUrl` is the playable content).
+   */
+  htmlUrl: string | null;
   /** Seconds, from the representative variant's `video_duration`. */
   videoDurationSec: number | null;
   width: number | null;

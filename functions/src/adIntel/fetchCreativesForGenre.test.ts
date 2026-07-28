@@ -22,6 +22,7 @@ function makeRaw(overrides: Partial<RawCreative>): RawCreative {
     mediaUrl: 'https://x/m',
     previewUrl: 'https://x/p',
     thumbnailUrl: 'https://x/t',
+    htmlUrl: null,
     videoDurationSec: 15,
     width: 1080,
     height: 1920,

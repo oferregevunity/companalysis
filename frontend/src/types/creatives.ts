@@ -42,6 +42,8 @@ export interface StoredCreative {
   mediaUrl: string | null;
   previewUrl: string | null;
   thumbnailUrl: string | null;
+  /** Playables only: interactive HTML entry point. Absent on docs written before playable support shipped. */
+  htmlUrl?: string | null;
   videoDurationSec: number | null;
   width: number | null;
   height: number | null;
