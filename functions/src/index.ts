@@ -578,6 +578,23 @@ export const compAnalysisApi = onRequest(
           return sendSuccess(res, result);
         }
 
+        case 'creatives/analyze-video': {
+          const { scopeId, week, creativeId } = req.body || {};
+          if (
+            !scopeId ||
+            typeof scopeId !== 'string' ||
+            !week ||
+            typeof week !== 'string' ||
+            !creativeId ||
+            typeof creativeId !== 'string'
+          ) {
+            return sendError(res, 400, 'scopeId, week, and creativeId are required');
+          }
+          const { analyzeSingleCreativeVideo } = await import('./gameWorkspaces/analyzeVideo');
+          const result = await analyzeSingleCreativeVideo({ scopeId, week, creativeId });
+          return sendSuccess(res, result);
+        }
+
         case 'games/market-opportunity': {
           const { focusAppId, apps, category, androidCategory, primaryCountry } = req.body || {};
           if (

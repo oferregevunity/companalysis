@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
 import type { JoinedCreative } from '../../hooks/useCreativesForGenre';
 import type { AppNameMapEntry } from '../../hooks/useAppNames';
-import type { CreativeInsightDoc } from '../../types/creatives';
+import type { CreativeInsightDoc, VideoAnalysis } from '../../types/creatives';
 import { aspectBucket } from '../../lib/creativeBuckets';
 import { buildBrief } from '../../lib/creativeBrief';
+import { analyzeCreativeVideo } from '../../lib/creativesApi';
 import { useCreativeWatchlist } from '../../hooks/useCreativeWatchlist';
 
 function lengthLabel(c: JoinedCreative): string | null {
@@ -24,6 +25,107 @@ function ratioLabel(c: JoinedCreative): string | null {
     default:
       return null;
   }
+}
+
+const PHASE_LABELS: Record<string, string> = { attention: 'Hook', content: 'Content', end: 'End' };
+
+function secLabel(s: number | null): string {
+  if (s == null) return '';
+  const m = Math.floor(s / 60);
+  const sec = Math.round(s % 60);
+  return m > 0 ? `${m}:${sec.toString().padStart(2, '0')}` : `${sec}s`;
+}
+
+function StrengthDots({ value }: { value: number }) {
+  return (
+    <span className="inline-flex gap-0.5" aria-hidden>
+      {[1, 2, 3, 4, 5].map((i) => (
+        <span key={i} className={`h-1.5 w-1.5 rounded-full ${i <= value ? 'bg-accent' : 'bg-hairline'}`} />
+      ))}
+    </span>
+  );
+}
+
+/** Renders one creative's Iteration-Loop video analysis. Strengths are predictions, not measured rates. */
+function VideoAnalysisView({ analysis }: { analysis: VideoAnalysis }) {
+  return (
+    <div className="space-y-2.5 text-[12px] leading-[1.55] text-ink-2">
+      {(analysis.predictedHookStrength != null || analysis.predictedHoldStrength != null) && (
+        <div className="flex items-center gap-4">
+          {analysis.predictedHookStrength != null && (
+            <span className="inline-flex items-center gap-1.5">
+              <span className="text-ink-muted">Hook</span>
+              <StrengthDots value={analysis.predictedHookStrength} />
+            </span>
+          )}
+          {analysis.predictedHoldStrength != null && (
+            <span className="inline-flex items-center gap-1.5">
+              <span className="text-ink-muted">Hold</span>
+              <StrengthDots value={analysis.predictedHoldStrength} />
+            </span>
+          )}
+          <span className="text-[10px] text-ink-faint" title="AI prediction from the video, not a measured Hook/Hold Rate">
+            predicted
+          </span>
+        </div>
+      )}
+      {analysis.hookMechanic && (
+        <p>
+          <span className="font-medium text-ink">Hook:</span> {analysis.hookMechanic}
+        </p>
+      )}
+      {analysis.motivations.length > 0 && (
+        <div className="flex flex-wrap gap-1">
+          {analysis.motivations.map((m) => (
+            <span key={m} className="rounded-full border border-line px-2 py-0.5 text-[11px]">
+              {m}
+            </span>
+          ))}
+        </div>
+      )}
+      {analysis.segments.length > 0 && (
+        <ol className="space-y-1.5">
+          {analysis.segments.map((seg, i) => (
+            <li key={i} className="border-l-2 border-hairline pl-2.5">
+              <p className="text-[11px] font-medium text-ink">
+                {PHASE_LABELS[seg.phase] ?? seg.phase}
+                {(seg.startSec != null || seg.endSec != null) && (
+                  <span className="ml-1 font-normal text-ink-faint">
+                    {secLabel(seg.startSec)}–{secLabel(seg.endSec)}
+                  </span>
+                )}
+              </p>
+              {seg.whatHappens && <p>{seg.whatHappens}</p>}
+              {seg.notableElements.length > 0 && (
+                <p className="mt-0.5 flex flex-wrap gap-1">
+                  {seg.notableElements.map((e) => (
+                    <span key={e} className="rounded bg-hairline px-1.5 py-px text-[10px] text-ink-muted">
+                      {e}
+                    </span>
+                  ))}
+                </p>
+              )}
+            </li>
+          ))}
+        </ol>
+      )}
+      {analysis.cta && (
+        <p>
+          <span className="font-medium text-ink">CTA:</span> {analysis.cta}
+        </p>
+      )}
+      {analysis.iterationIdeas.length > 0 && (
+        <div>
+          <p className="mb-0.5 text-[11px] font-medium text-ink">Iteration ideas</p>
+          <ul className="list-disc space-y-0.5 pl-4">
+            {analysis.iterationIdeas.map((idea, i) => (
+              <li key={i}>{idea}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
 }
 
 function SubScoreBar({ label, value, max = 25 }: { label: string; value: number; max?: number }) {
@@ -47,6 +149,9 @@ export interface CreativeDetailModalProps {
   appEntry?: AppNameMapEntry;
   rank?: number;
   country: string;
+  /** Workspace scope id (`game_{focusAppId}`) + week — needed to trigger on-demand video analysis. */
+  scopeId: string;
+  week: string;
 }
 
 export function CreativeDetailModal({
@@ -57,12 +162,17 @@ export function CreativeDetailModal({
   appEntry,
   rank,
   country,
+  scopeId,
+  week,
 }: CreativeDetailModalProps) {
-  const [showVideo, setShowVideo] = useState(false);
+  const [playing, setPlaying] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [analyzing, setAnalyzing] = useState(false);
+  const [analyzeError, setAnalyzeError] = useState<string | null>(null);
+  const [localAnalysis, setLocalAnalysis] = useState<VideoAnalysis | null>(null);
   const { has, add } = useCreativeWatchlist();
 
-  // showVideo/copied reset on their own — the page remounts this dialog per
+  // playing/copied reset on their own — the page remounts this dialog per
   // creative via `key`, so mount-fresh state is correct without an effect.
   useEffect(() => {
     if (!open) return;
@@ -90,6 +200,7 @@ export function CreativeDetailModal({
 
   const saved = has(creative.appId);
   const isVideo = creative.format === 'video' && !!creative.mediaUrl;
+  const isPlayable = creative.format === 'playable' && !!creative.htmlUrl;
   const poster = creative.thumbnailUrl ?? creative.mediaUrl ?? undefined;
   const pillParts = [lengthLabel(creative), ratioLabel(creative)].filter(Boolean);
 
@@ -103,6 +214,30 @@ export function CreativeDetailModal({
         window.setTimeout(() => setCopied(false), 1800);
       },
       () => setCopied(false),
+    );
+  };
+
+  // On-demand video analysis: prefer the just-returned local result, else the
+  // one persisted on the insight doc (the live snapshot backfills it too).
+  const videoAnalysis =
+    localAnalysis && localAnalysis.creativeId === creative.docId
+      ? localAnalysis
+      : insightDoc?.videoAnalyses?.find((v) => v.creativeId === creative.docId) ?? null;
+
+  const onAnalyzeVideo = () => {
+    if (analyzing || !scopeId || !week) return;
+    setAnalyzing(true);
+    setAnalyzeError(null);
+    void analyzeCreativeVideo({ scopeId, week, creativeId: creative.docId }).then(
+      (res) => {
+        setAnalyzing(false);
+        if (res.ok && res.analysis) setLocalAnalysis(res.analysis);
+        else setAnalyzeError(res.reason || 'Analysis failed.');
+      },
+      (err) => {
+        setAnalyzing(false);
+        setAnalyzeError(err instanceof Error ? err.message : 'Analysis failed.');
+      },
     );
   };
 
@@ -133,7 +268,7 @@ export function CreativeDetailModal({
 
         {/* Left — media */}
         <div className="relative w-[246px] shrink-0 self-stretch bg-[#dfe0e8]">
-          {isVideo && showVideo ? (
+          {isVideo && playing ? (
             <video
               src={creative.mediaUrl!}
               controls
@@ -144,16 +279,25 @@ export function CreativeDetailModal({
               poster={poster}
               className="h-full w-full object-cover"
             />
+          ) : isPlayable && playing ? (
+            <iframe
+              src={creative.htmlUrl!}
+              title={`${displayName} playable`}
+              // Cross-origin content on Sensor Tower's CDN; allow-scripts runs
+              // the playable, allow-same-origin lets it reach its own assets.
+              sandbox="allow-scripts allow-same-origin allow-pointer-lock"
+              className="h-full w-full border-0 bg-white"
+            />
           ) : poster ? (
             <img src={poster} alt="" className="h-full w-full object-cover" />
           ) : (
             <div className="flex h-full w-full items-center justify-center text-xs text-ink-faint">No preview</div>
           )}
-          {isVideo && !showVideo && (
+          {(isVideo || isPlayable) && !playing && (
             <button
               type="button"
-              onClick={() => setShowVideo(true)}
-              aria-label="Play"
+              onClick={() => setPlaying(true)}
+              aria-label={isPlayable ? 'Play playable' : 'Play'}
               className="absolute inset-0 flex items-center justify-center focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-4 focus-visible:outline-accent"
             >
               <span className="flex h-11 w-11 items-center justify-center rounded-full bg-[rgba(22,23,31,0.55)]">
@@ -220,6 +364,42 @@ export function CreativeDetailModal({
             <SubScoreBar label="Momentum" value={sub.impressionMomentum} />
             <SubScoreBar label="Freshness" value={sub.freshnessAdjustedPersistence} />
           </div>
+
+          {isVideo && (
+            <div>
+              <div className="mb-1.5 flex items-center justify-between">
+                <p className="text-[10px] font-semibold uppercase tracking-[0.09em] text-ink-muted">Video analysis</p>
+                {videoAnalysis && (
+                  <button
+                    type="button"
+                    onClick={onAnalyzeVideo}
+                    disabled={analyzing}
+                    className="text-[11px] text-accent-text hover:underline disabled:opacity-60"
+                  >
+                    {analyzing ? 'Re-analyzing…' : 'Re-analyze'}
+                  </button>
+                )}
+              </div>
+              {videoAnalysis ? (
+                <VideoAnalysisView analysis={videoAnalysis} />
+              ) : (
+                <div className="rounded-lg border border-dashed border-line bg-[#faf9fe] p-3 text-center">
+                  <p className="mb-2 text-[12px] text-ink-muted">
+                    Break this video down by hook, pacing, and motivations (first-3s hook, mid-content, end/CTA).
+                  </p>
+                  <button
+                    type="button"
+                    onClick={onAnalyzeVideo}
+                    disabled={analyzing}
+                    className="rounded-lg border border-accent bg-transparent px-3 py-1.5 text-xs font-medium text-accent-text hover:bg-accent-tint disabled:opacity-60"
+                  >
+                    {analyzing ? 'Analyzing video…' : 'Analyze this video'}
+                  </button>
+                  {analyzeError && <p className="mt-2 text-[11px] text-red-600">{analyzeError}</p>}
+                </div>
+              )}
+            </div>
+          )}
 
           <div className="mt-auto flex flex-wrap items-center gap-2 pt-1">
             <button

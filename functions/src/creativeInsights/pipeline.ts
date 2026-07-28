@@ -3,6 +3,7 @@ import type { StoredCreative } from '../adIntel/fetchCreativesForGenre';
 import type { BuildPromptInput, CreativeTag, ParsedCreativeResponse } from './geminiClient';
 import type { CreativeScoreRow } from './scoringPipeline';
 import type { SubScores } from './scoringEngine';
+import type { VideoAnalysis } from './videoAnalysis';
 
 export interface CreativeInsightDoc {
   genreId: string;
@@ -28,6 +29,13 @@ export interface CreativeInsightDoc {
   }>;
   /** Per-creative hook/theme classification (winners + concept candidates). */
   creativeTags: CreativeTag[];
+  /**
+   * Deep per-video analysis for the top-N winner videos (Iteration Loop rubric).
+   * Additive + optional — absent on docs generated before video analysis, and
+   * on genre docs that never run the video pass. Written by a second pass in
+   * `analyzeGameWorkspace`, keyed by creativeId (docId).
+   */
+  videoAnalyses?: VideoAnalysis[];
   geminiError?: string;
 }
 

@@ -111,6 +111,51 @@ export interface CreativeTag {
   themes: string[];
 }
 
+/** Mirrors `MOTIVATIONS` in `functions/src/creativeInsights/videoAnalysis.ts`. */
+export const MOTIVATIONS = [
+  'Action', 'Achievement', 'Mastery', 'Social', 'Creativity', 'Destruction',
+  'Completion', 'Challenge', 'Competition', 'Design', 'Excitement', 'Power',
+  'Strategy', 'Collaboration', 'Discovery',
+] as const;
+export type Motivation = (typeof MOTIVATIONS)[number];
+
+/** Mirrors `ITERABLE_ELEMENTS` in `functions/src/creativeInsights/videoAnalysis.ts`. */
+export const ITERABLE_ELEMENTS = [
+  'Opening/Hook', 'Mechanics', 'Visual elements', 'Animations', 'Color scheme',
+  'Audio', 'Scene order', 'Zoom level', 'Gameplay capture', 'Hand pointer',
+  'Difficulty level', 'Length', 'Captions', 'Voiceover', 'UGC', 'End twist',
+  'CTA', 'Layout complexity', 'Store logo',
+] as const;
+export type IterableElement = (typeof ITERABLE_ELEMENTS)[number];
+
+export type SegmentPhase = 'attention' | 'content' | 'end';
+
+export interface CreativeSegment {
+  phase: SegmentPhase;
+  startSec: number | null;
+  endSec: number | null;
+  whatHappens: string;
+  notableElements: IterableElement[];
+}
+
+/**
+ * Deep per-video analysis (Iteration Loop rubric). Mirrors `VideoAnalysis` in
+ * `functions/src/creativeInsights/videoAnalysis.ts`. `predictedHook/HoldStrength`
+ * are qualitative 1–5 PREDICTIONS (not measured rates) — label them as such.
+ */
+export interface VideoAnalysis {
+  creativeId: CreativeDocId;
+  hookType: HookType;
+  motivations: Motivation[];
+  hookMechanic: string;
+  segments: CreativeSegment[];
+  cta: string | null;
+  predictedHookStrength: number | null;
+  predictedHoldStrength: number | null;
+  iterationIdeas: string[];
+  themes: string[];
+}
+
 /**
  * Mirrors `CreativeInsightDoc` in `functions/src/creativeInsights/pipeline.ts`.
  * `winners[].creativeId` / `watchList[].creativeId` are docIds (`appId__creativeKey`).
@@ -143,6 +188,8 @@ export interface CreativeInsightDoc {
   }>;
   /** Absent on docs generated before hook/theme classification shipped. */
   creativeTags?: CreativeTag[];
+  /** Deep video analyses for top winner videos. Absent until the video pass runs. */
+  videoAnalyses?: VideoAnalysis[];
   geminiError?: string;
 }
 

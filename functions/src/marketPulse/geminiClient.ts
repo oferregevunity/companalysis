@@ -41,9 +41,9 @@ export function clustersToConcepts(clusters: RisingCluster[]): NamedRisingConcep
 
 export function buildMarketPulsePrompt(clusters: RisingCluster[], week: string): string {
   const lines = clusters
-    .map((c) => {
+    .map((c, i) => {
       const growth = c.isNew ? 'NEW this week' : `${c.wowGrowthPct}% WoW`;
-      return `- [${c.kind}] "${c.label}" — ${c.count} creatives (was ${c.prevCount}, ${growth}), genres=[${c.genresSeenIn.join(', ')}]`;
+      return `${i}. [${c.kind}] "${c.label}" — ${c.count} creatives (was ${c.prevCount}, ${growth}), genres=[${c.genresSeenIn.join(', ')}]`;
     })
     .join('\n');
 
@@ -53,10 +53,10 @@ ${lines || '(none)'}
 
 For each item, give it a short, memorable concept name and a 1-sentence description of the visual/narrative/UA angle a game team could copy. Ground everything in the data — do not invent growth numbers or genres.
 
-Respond in valid JSON with NO markdown fences, using EXACTLY this schema:
+Respond in valid JSON with NO markdown fences, using EXACTLY this schema. Reference each item by its numeric "index" from the list above (0-based) — return one entry per item:
 {
   "concepts": [
-    { "label": "<the exact label from the list above>", "title": "short concept name", "description": "1 sentence on the creative angle" }
+    { "index": 0, "title": "short concept name", "description": "1 sentence on the creative angle" }
   ]
 }`;
 }
@@ -66,20 +66,42 @@ export function parseMarketPulseResponse(raw: string, clusters: RisingCluster[])
   try {
     const cleaned = raw.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '');
     const obj = JSON.parse(cleaned) as { concepts?: unknown };
-    const named = new Map<string, { title: string; description: string }>();
-    if (Array.isArray(obj.concepts)) {
-      for (const c of obj.concepts as Array<Record<string, unknown>>) {
-        const label = String(c.label ?? '').trim();
-        if (!label) continue;
-        named.set(label, {
-          title: String(c.title ?? '').trim() || label,
-          description: String(c.description ?? '').trim(),
-        });
+    if (!Array.isArray(obj.concepts)) return base;
+
+    // Match Gemini's echoed items back to clusters by numeric index (primary),
+    // falling back to a case-insensitive label match. Exact-label matching used
+    // to miss on every item because the echoed label rarely matches verbatim.
+    const byLabel = new Map<string, number>();
+    base.forEach((c, i) => byLabel.set(c.label.trim().toLowerCase(), i));
+
+    const patch = (title: string, description: string): { title?: string; description: string } => ({
+      title: title || undefined,
+      description,
+    });
+    const patched = new Map<number, { title?: string; description: string }>();
+
+    for (const item of obj.concepts as Array<Record<string, unknown>>) {
+      const title = String(item.title ?? '').trim();
+      const description = String(item.description ?? '').trim();
+      if (!title && !description) continue;
+
+      let idx = -1;
+      if (typeof item.index === 'number' && Number.isInteger(item.index)) {
+        idx = item.index;
+      } else if (item.index != null && /^\d+$/.test(String(item.index).trim())) {
+        idx = Number(String(item.index).trim());
       }
+      if (idx < 0 || idx >= base.length) {
+        const label = String(item.label ?? '').trim().toLowerCase();
+        idx = label ? byLabel.get(label) ?? -1 : -1;
+      }
+      if (idx >= 0 && idx < base.length && !patched.has(idx)) patched.set(idx, patch(title, description));
     }
-    return base.map((concept) => {
-      const n = named.get(concept.label);
-      return n ? { ...concept, title: n.title, description: n.description } : concept;
+
+    return base.map((concept, i) => {
+      const p = patched.get(i);
+      if (!p) return concept;
+      return { ...concept, title: p.title ?? concept.title, description: p.description };
     });
   } catch {
     return base;
