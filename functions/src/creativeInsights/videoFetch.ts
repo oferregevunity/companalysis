@@ -28,6 +28,10 @@ export interface FetchedVideo {
 /** ~12 MB raw keeps the base64 payload (+~33%) safely under Vertex's ~20 MB inline cap. */
 const DEFAULT_MAX_BYTES = 12 * 1024 * 1024;
 
+function mb(bytes: number): string {
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
 /** Guess a video mime type from the URL extension; defaults to video/mp4. */
 export function guessVideoMime(url: string): string {
   const clean = url.split('?')[0].toLowerCase();
@@ -47,10 +51,12 @@ export async function fetchCreativeVideo(mediaUrl: string, deps: FetchVideoDeps 
   const maxBytes = deps.maxBytes ?? DEFAULT_MAX_BYTES;
 
   const res = await doFetch(mediaUrl);
-  if (!res.ok) throw new Error(`fetch failed: HTTP ${res.status}`);
+  if (!res.ok) throw new Error(`Couldn't download the video (HTTP ${res.status}).`);
   const buf = Buffer.from(await res.arrayBuffer());
-  if (buf.byteLength === 0) throw new Error('empty media body');
-  if (buf.byteLength > maxBytes) throw new Error(`media too large: ${buf.byteLength} > ${maxBytes} bytes`);
+  if (buf.byteLength === 0) throw new Error('The video file was empty.');
+  if (buf.byteLength > maxBytes) {
+    throw new Error(`Video is ${mb(buf.byteLength)} — too large to analyze inline (limit ${mb(maxBytes)}).`);
+  }
 
   return { base64: buf.toString('base64'), mimeType: guessVideoMime(mediaUrl), byteLength: buf.byteLength };
 }

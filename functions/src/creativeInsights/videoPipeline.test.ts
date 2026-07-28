@@ -71,11 +71,25 @@ describe('analyzeWinnerVideos', () => {
     expect(res.analyses).toHaveLength(0);
   });
 
-  it('treats a download error as non-fatal', async () => {
-    const fetchVideo = vi.fn(async () => { throw new Error('fetch failed'); });
+  it('treats a download error as non-fatal and surfaces its reason', async () => {
+    const fetchVideo = vi.fn(async () => { throw new Error('Video is 19.4 MB — too large to analyze inline (limit 14.0 MB).'); });
     const res = await analyzeWinnerVideos([winner({ creativeId: 'a__1' })], { week: 'w', fetchVideo, generate: okGenerate });
     expect(res.failed).toBe(1);
     expect(res.analyses).toHaveLength(0);
+    expect(res.errors).toEqual([{ creativeId: 'a__1', reason: 'Video is 19.4 MB — too large to analyze inline (limit 14.0 MB).' }]);
+  });
+
+  it('surfaces a reason when the model output is unparseable', async () => {
+    const fetchVideo = stubFetch();
+    const res = await analyzeWinnerVideos([winner({ creativeId: 'a__1' })], { week: 'w', fetchVideo, generate: vi.fn(async () => 'nope') });
+    expect(res.errors).toHaveLength(1);
+    expect(res.errors[0].reason).toMatch(/no readable analysis/i);
+  });
+
+  it('threads maxBytes through to the fetch', async () => {
+    const fetchVideo = stubFetch();
+    await analyzeWinnerVideos([winner({ creativeId: 'a__1' })], { week: 'w', maxBytes: 14 * 1024 * 1024, fetchVideo, generate: okGenerate });
+    expect(fetchVideo).toHaveBeenCalledWith('https://cdn/1.mp4', { maxBytes: 14 * 1024 * 1024 });
   });
 
   it('marks the focus game so the prompt can flag it', async () => {

@@ -35,14 +35,24 @@ export interface AnalyzeVideosDeps {
   maxVideos?: number;
   /** Parallel video analyses in flight. Default 3 (Vertex-friendly). */
   concurrency?: number;
+  /** Max raw bytes per video download (see videoFetch). Undefined uses fetch's default (~12 MB). */
+  maxBytes?: number;
   fetchVideo?: typeof fetchCreativeVideo;
   generate?: VideoGenerate;
+}
+
+/** Why one video couldn't be analyzed (download/oversize/parse) — user-facing. */
+export interface VideoAnalysisError {
+  creativeId: string;
+  reason: string;
 }
 
 export interface AnalyzeVideosResult {
   analyses: VideoAnalysis[];
   attempted: number;
   failed: number;
+  /** Per-creative failure reasons, aligned with `failed`. */
+  errors: VideoAnalysisError[];
 }
 
 /** The winners worth video-analyzing: video format, has media, top-N by rank. */
@@ -76,33 +86,42 @@ export async function analyzeWinnerVideos(
   const concurrency = deps.concurrency ?? 3;
 
   const selected = selectWinnerVideos(winners, maxVideos);
-  let failed = 0;
 
-  const settled = await runPool(selected, concurrency, async (w): Promise<VideoAnalysis | null> => {
-    try {
-      const { base64, mimeType } = await fetchVideo(w.mediaUrl!, {});
-      const analysis = await analyzeCreativeVideo(
-        {
-          creativeId: w.creativeId,
-          appName: w.appName,
-          isFocusGame: !!deps.focusAppId && w.appId === deps.focusAppId,
-          videoDurationSec: w.videoDurationSec,
-          title: w.title,
-          message: w.message,
-        },
-        base64,
-        mimeType,
-        deps.generate,
-      );
-      if (!analysis) failed += 1;
-      return analysis;
-    } catch {
-      failed += 1;
-      return null;
-    }
-  });
+  const settled = await runPool(
+    selected,
+    concurrency,
+    async (w): Promise<{ analysis: VideoAnalysis | null; error: VideoAnalysisError | null }> => {
+      try {
+        const { base64, mimeType } = await fetchVideo(w.mediaUrl!, { maxBytes: deps.maxBytes });
+        const analysis = await analyzeCreativeVideo(
+          {
+            creativeId: w.creativeId,
+            appName: w.appName,
+            isFocusGame: !!deps.focusAppId && w.appId === deps.focusAppId,
+            videoDurationSec: w.videoDurationSec,
+            title: w.title,
+            message: w.message,
+          },
+          base64,
+          mimeType,
+          deps.generate,
+        );
+        if (!analysis) {
+          const reason = 'The model returned no readable analysis for this video.';
+          console.warn(`[videoAnalysis] ${w.creativeId}: ${reason}`);
+          return { analysis: null, error: { creativeId: w.creativeId, reason } };
+        }
+        return { analysis, error: null };
+      } catch (err) {
+        const reason = err instanceof Error ? err.message : String(err);
+        console.warn(`[videoAnalysis] ${w.creativeId}: ${reason}`);
+        return { analysis: null, error: { creativeId: w.creativeId, reason } };
+      }
+    },
+  );
 
   // Preserve rank order; drop nulls (failed/unparseable).
-  const analyses = settled.filter((a): a is VideoAnalysis => a != null);
-  return { analyses, attempted: selected.length, failed };
+  const analyses = settled.map(s => s.analysis).filter((a): a is VideoAnalysis => a != null);
+  const errors = settled.map(s => s.error).filter((e): e is VideoAnalysisError => e != null);
+  return { analyses, attempted: selected.length, failed: errors.length, errors };
 }

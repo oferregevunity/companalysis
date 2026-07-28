@@ -38,7 +38,11 @@ export async function analyzeSingleCreativeVideo(params: {
   const nameData = nameSnap.exists ? (nameSnap.data() as Record<string, unknown>) : undefined;
   const appName = typeof nameData?.name === 'string' && nameData.name ? nameData.name : c.appId;
 
-  const { analyses } = await analyzeWinnerVideos(
+  // On-demand is a single user-requested video, so push to the inline ceiling
+  // (~14 MB raw ≈ 18.6 MB base64, under Vertex's ~20 MB request cap) rather than
+  // the batch job's tighter 12 MB budget. Videos past this can't go inline.
+  const ON_DEMAND_MAX_BYTES = 14 * 1024 * 1024;
+  const { analyses, errors } = await analyzeWinnerVideos(
     [
       {
         creativeId,
@@ -52,10 +56,12 @@ export async function analyzeSingleCreativeVideo(params: {
         message: c.message,
       },
     ],
-    { week, focusAppId },
+    { week, focusAppId, maxBytes: ON_DEMAND_MAX_BYTES },
   );
   const analysis = analyses[0] ?? null;
-  if (!analysis) return { ok: false, analysis: null, reason: 'Analysis failed — the video could not be read.' };
+  if (!analysis) {
+    return { ok: false, analysis: null, reason: errors[0]?.reason ?? 'Analysis failed — the video could not be read.' };
+  }
 
   // Upsert into the insight doc's videoAnalyses array without clobbering the
   // batch pass's entries or a concurrent manual analysis.
