@@ -128,11 +128,11 @@ export async function analyzeGameWorkspace(params: {
     },
   });
 
-  // Second pass: deep video analysis of the top-N winner videos shown in the UI.
+  // Second pass: deep video analysis of the top video creatives shown in the UI.
   // Non-fatal — any failure here leaves the (already-written) insight doc intact.
   let videoAnalysisCount = 0;
   try {
-    videoAnalysisCount = await analyzeWorkspaceWinnerVideos({
+    videoAnalysisCount = await analyzeWorkspaceTopVideos({
       insightDocRef,
       focusAppId,
       week,
@@ -153,12 +153,13 @@ export async function analyzeGameWorkspace(params: {
 }
 
 /**
- * Reads the just-written winners off the insight doc, video-analyzes the top-N
- * that are videos, and merges `videoAnalyses` back onto the doc. Returns the
- * number of analyses written. Isolated + lazily-imported so the heavy Vertex /
- * Storage deps only load when a workspace analysis actually runs.
+ * Video-analyzes the top video creatives by score — the ones the UI surfaces at
+ * the top of the gallery — and merges `videoAnalyses` back onto the insight doc.
+ * Deliberately NOT gated on the ≥60 "winner" bar: real workspaces often top out
+ * below 60, and we still want the top videos analyzed. Returns the count.
+ * Isolated + lazily-imported so the Vertex dep only loads when analysis runs.
  */
-async function analyzeWorkspaceWinnerVideos(params: {
+async function analyzeWorkspaceTopVideos(params: {
   insightDocRef: FirebaseFirestore.DocumentReference;
   focusAppId: string;
   week: string;
@@ -167,31 +168,43 @@ async function analyzeWorkspaceWinnerVideos(params: {
   const { insightDocRef, focusAppId, week, creativesByDocId } = params;
   const { analyzeWinnerVideos } = await import('../creativeInsights/videoPipeline');
 
-  const snap = await insightDocRef.get();
-  const doc = snap.data() as
-    | { winners?: Array<{ creativeId: string; appId: string; appName?: string; rank: number }> }
-    | undefined;
-  const winners = doc?.winners ?? [];
-  if (winners.length === 0) return 0;
+  // Top-scored creatives; keep the video ones (with media) until we have 10.
+  const scoreSnap = await insightDocRef.collection('scores').orderBy('score', 'desc').limit(60).get();
+  const picks: Array<{ docId: string; appId: string; c: StoredCreative }> = [];
+  for (const s of scoreSnap.docs) {
+    const row = s.data() as { docId: string; appId: string; score: number };
+    const c = creativesByDocId.get(row.docId);
+    if (!c || c.format !== 'video' || !c.mediaUrl) continue;
+    picks.push({ docId: row.docId, appId: row.appId, c });
+    if (picks.length >= 10) break;
+  }
+  if (picks.length === 0) return 0;
 
-  // App display names for the prompt — the doc's winners already carry appName;
-  // fall back to the appId when a legacy doc omits it.
-  const winnerVideos = winners.map(w => {
-    const c = creativesByDocId.get(w.creativeId);
-    return {
-      creativeId: w.creativeId,
-      appId: w.appId,
-      appName: w.appName?.trim() || w.appId,
-      rank: w.rank,
-      format: c?.format ?? 'unknown',
-      mediaUrl: c?.mediaUrl ?? null,
-      videoDurationSec: c?.videoDurationSec ?? null,
-      title: c?.title ?? null,
-      message: c?.message ?? null,
-    };
-  });
+  // App display names for the prompt.
+  const db = insightDocRef.firestore;
+  const appIds = [...new Set(picks.map(p => p.appId))];
+  const nameDocs = await db.getAll(...appIds.map(id => db.collection('appNames').doc(id)));
+  const names = new Map<string, string>();
+  for (const d of nameDocs) {
+    if (d.exists) {
+      const data = d.data() as Record<string, unknown>;
+      names.set(d.id, typeof data.name === 'string' && data.name ? data.name : d.id);
+    }
+  }
 
-  const { analyses } = await analyzeWinnerVideos(winnerVideos, { week, focusAppId });
+  const topVideos = picks.map((p, i) => ({
+    creativeId: p.docId,
+    appId: p.appId,
+    appName: names.get(p.appId) ?? p.appId,
+    rank: i + 1,
+    format: p.c.format,
+    mediaUrl: p.c.mediaUrl,
+    videoDurationSec: p.c.videoDurationSec,
+    title: p.c.title,
+    message: p.c.message,
+  }));
+
+  const { analyses } = await analyzeWinnerVideos(topVideos, { week, focusAppId });
 
   if (analyses.length > 0) {
     const { FieldValue } = await import('firebase-admin/firestore');
