@@ -839,6 +839,8 @@ export default function Creatives() {
         appEntry={detailCreative ? appNames.get(detailCreative.appId) : undefined}
         rank={detailCreative ? rankMap.get(detailCreative.docId) : undefined}
         country={country}
+        scopeId={scopeId}
+        week={latestWeek}
       />
     </div>
   );

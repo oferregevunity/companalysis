@@ -24,6 +24,9 @@ function normalizeInsightDoc(raw: Record<string, unknown>): CreativeInsightDoc |
     creativeTags: Array.isArray(raw.creativeTags)
       ? (raw.creativeTags as CreativeInsightDoc['creativeTags'])
       : [],
+    videoAnalyses: Array.isArray(raw.videoAnalyses)
+      ? (raw.videoAnalyses as CreativeInsightDoc['videoAnalyses'])
+      : [],
     ...(typeof raw.geminiError === 'string' ? { geminiError: raw.geminiError } : {}),
   };
 }

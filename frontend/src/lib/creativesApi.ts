@@ -1,4 +1,5 @@
 import { auth } from './firebase';
+import type { VideoAnalysis } from '../types/creatives';
 
 const FUNCTION_BASE =
   (import.meta.env.VITE_CREATIVES_FUNCTION_URL as string | undefined)?.replace(/\/$/, '') ||
@@ -177,6 +178,15 @@ export function fetchMarketOpportunity(params: {
   primaryCountry: string;
 }): Promise<MarketPresence> {
   return callFunction<MarketPresence>('games/market-opportunity', params);
+}
+
+/** On-demand deep video analysis for one creative (Iteration Loop rubric). */
+export function analyzeCreativeVideo(params: {
+  scopeId: string;
+  week: string;
+  creativeId: string;
+}): Promise<{ ok: boolean; analysis: VideoAnalysis | null; reason?: string }> {
+  return callFunction('creatives/analyze-video', params);
 }
 
 export function getWatchlistApps(): Promise<{ appIds: string[] }> {
