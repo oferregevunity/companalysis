@@ -1,24 +1,33 @@
 import { useState } from 'react';
 import type { JoinedCreative } from '../../hooks/useCreativesForGenre';
-import type { CreativeFormat, CreativeTag, QueryableAdNetwork } from '../../types/creatives';
+import type { CreativeFormat, CreativeTag } from '../../types/creatives';
 import type { AppNameMapEntry } from '../../hooks/useAppNames';
 
 const PLACEHOLDER_SVG =
   'data:image/svg+xml,' +
   encodeURIComponent(
-    '<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64"><rect fill="#e5e7eb" width="64" height="64"/><text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle" fill="#9ca3af" font-size="10">—</text></svg>',
+    '<svg xmlns="http://www.w3.org/2000/svg" width="64" height="80"><rect fill="#dfe0e8" width="64" height="80"/></svg>',
   );
 
-function scoreBadgeClass(score: number): string {
-  if (score < 40) return 'bg-gray-100 text-gray-600';
-  if (score < 60) return 'bg-yellow-100 text-yellow-800';
-  if (score < 80) return 'bg-green-100 text-green-800';
-  return 'bg-emerald-100 text-emerald-900';
+function formatLabel(f: CreativeFormat): string {
+  return f === 'unknown' ? 'Unknown' : f.charAt(0).toUpperCase() + f.slice(1);
 }
 
-function formatChipLabel(f: CreativeFormat): string {
-  if (f === 'unknown') return 'Unknown';
-  return f.charAt(0).toUpperCase() + f.slice(1);
+/** Pill label: "0:12" for videos with a duration, else the format name. */
+function pillLabel(c: JoinedCreative): string {
+  if (c.format === 'video' && c.videoDurationSec != null && c.videoDurationSec > 0) {
+    const m = Math.floor(c.videoDurationSec / 60);
+    const s = Math.round(c.videoDurationSec % 60);
+    return `${m}:${s.toString().padStart(2, '0')}`;
+  }
+  return formatLabel(c.format);
+}
+
+/** One evidence line: longevity · network breadth · share of voice. */
+function evidenceLine(c: JoinedCreative): string {
+  const parts = [`${c.durationDays}d live`, `${c.networks.length} network${c.networks.length === 1 ? '' : 's'}`];
+  if (c.maxShare != null) parts.push(`${Math.round(c.maxShare * 100)}% SoV`);
+  return parts.join(' · ');
 }
 
 export interface CreativeTileProps {
@@ -26,60 +35,25 @@ export interface CreativeTileProps {
   rankBadge?: number;
   appEntry?: AppNameMapEntry;
   tag?: CreativeTag;
+  isOwn?: boolean;
   onOpen: (docId: string) => void;
 }
 
-export function CreativeTile({ creative, rankBadge, appEntry, tag, onOpen }: CreativeTileProps) {
+export function CreativeTile({ creative, rankBadge, appEntry, tag, isOwn, onOpen }: CreativeTileProps) {
   const displayName = appEntry?.name ?? creative.appId;
-  const publisher = appEntry?.publisherName?.trim();
 
-  const winnerGlow = rankBadge != null && rankBadge <= 10;
-
-  // Chrome caps WebMediaPlayer instances per tab (~75). With thousands of
-  // creatives we can't mount a <video> per tile. Render the poster image
-  // by default and only swap to <video> while the tile is hovered, so at
-  // most a handful of players are alive at a time.
+  // Chrome caps WebMediaPlayer instances per tab (~75). Render the poster by
+  // default and only swap to <video> while hovered/focused so at most a handful
+  // of players are ever alive.
   const [isHovering, setIsHovering] = useState(false);
   const isVideo = creative.format === 'video' && !!creative.mediaUrl;
   const poster = creative.thumbnailUrl ?? creative.mediaUrl ?? PLACEHOLDER_SVG;
 
-  const media = isVideo && isHovering ? (
-    <video
-      src={creative.mediaUrl!}
-      muted
-      loop
-      playsInline
-      autoPlay
-      preload="metadata"
-      poster={creative.thumbnailUrl ?? undefined}
-      className="w-full aspect-square object-cover"
-    />
-  ) : (
-    <div className="relative">
-      <img
-        src={poster}
-        alt=""
-        loading="lazy"
-        className="w-full aspect-square object-cover"
-      />
-      {isVideo ? (
-        <span className="absolute inset-0 flex items-center justify-center pointer-events-none">
-          <span className="w-10 h-10 rounded-full bg-black/50 flex items-center justify-center">
-            <svg viewBox="0 0 24 24" className="w-5 h-5 fill-white" aria-hidden="true">
-              <path d="M8 5v14l11-7z" />
-            </svg>
-          </span>
-        </span>
-      ) : null}
-    </div>
-  );
+  const hookTheme = tag ? [tag.hookType, ...(tag.themes[0] ? [tag.themes[0]] : [])].join(' · ') : null;
 
   return (
     <div
       id={`creative-${creative.docId}`}
-      className={`relative rounded-xl border border-gray-200 bg-white overflow-hidden shadow-sm cursor-pointer transition-shadow hover:shadow-md ${
-        winnerGlow ? 'ring-2 ring-emerald-300/50 shadow-lg' : ''
-      }`}
       role="button"
       tabIndex={0}
       onClick={() => onOpen(creative.docId)}
@@ -93,52 +67,64 @@ export function CreativeTile({ creative, rankBadge, appEntry, tag, onOpen }: Cre
       onMouseLeave={() => isVideo && setIsHovering(false)}
       onFocus={() => isVideo && setIsHovering(true)}
       onBlur={() => isVideo && setIsHovering(false)}
+      className="cursor-pointer overflow-hidden rounded-lg border border-line bg-surface transition-colors hover:border-accent-border focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
     >
-      <div className="relative">
+      <div className="relative aspect-[4/5] bg-[#dfe0e8]">
+        {isVideo && isHovering ? (
+          <video
+            src={creative.mediaUrl!}
+            muted
+            loop
+            playsInline
+            autoPlay
+            preload="metadata"
+            poster={creative.thumbnailUrl ?? undefined}
+            className="h-full w-full object-cover"
+          />
+        ) : (
+          <>
+            <img src={poster} alt="" loading="lazy" className="h-full w-full object-cover" />
+            {isVideo && (
+              <span className="pointer-events-none absolute inset-0 flex items-center justify-center">
+                <span className="flex h-9 w-9 items-center justify-center rounded-full bg-[rgba(22,23,31,0.55)]">
+                  <svg viewBox="0 0 24 24" className="h-4 w-4 fill-white" aria-hidden>
+                    <path d="M8 5v14l11-7z" />
+                  </svg>
+                </span>
+              </span>
+            )}
+          </>
+        )}
+
         {rankBadge != null && (
-          <span className="absolute top-2 left-2 z-10 inline-flex items-center justify-center min-w-[1.75rem] px-1.5 py-0.5 rounded-full text-[11px] font-bold bg-white/95 text-gray-900 border border-gray-200 shadow-sm">
+          <span className="absolute left-2 top-2 rounded-md bg-ink px-[7px] py-0.5 text-[11px] font-semibold text-white">
             #{rankBadge}
           </span>
         )}
         {creative.score != null && (
-          <span
-            className={`absolute top-2 right-2 z-10 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold ${scoreBadgeClass(creative.score)}`}
-          >
+          <span className="absolute right-2 top-2 rounded-md border border-accent-border bg-[rgba(255,255,255,0.94)] px-[7px] py-0.5 text-[11px] font-semibold text-accent-text">
             {creative.score}
           </span>
         )}
-        {media}
+        <span className="absolute bottom-2 left-2 rounded-[5px] bg-[rgba(22,23,31,0.7)] px-1.5 py-px text-[10px] text-white">
+          {pillLabel(creative)}
+        </span>
       </div>
-      <div className="p-3 space-y-1.5">
-        <div className="flex flex-wrap gap-1">
-          {creative.networks.map((n: QueryableAdNetwork) => (
-            <span
-              key={n}
-              className="inline-flex px-1.5 py-0.5 rounded text-[10px] font-medium bg-gray-100 text-gray-600 max-w-full truncate"
-              title={n}
-            >
-              {n}
-            </span>
-          ))}
-        </div>
-        <div className="flex flex-wrap gap-1">
-          <span className="inline-flex px-1.5 py-0.5 rounded text-[10px] font-medium bg-slate-100 text-slate-700">
-            {formatChipLabel(creative.format)}
-          </span>
-          {tag && (
-            <span
-              className="inline-flex px-1.5 py-0.5 rounded text-[10px] font-medium bg-blue-50 text-blue-700 max-w-full truncate"
-              title={tag.themes.length > 0 ? `Themes: ${tag.themes.join(', ')}` : undefined}
-            >
-              {tag.hookType}
-            </span>
+
+      <div className="flex flex-col gap-1.5 px-3 pb-3 pt-[11px]">
+        <div className="flex items-center gap-2">
+          {appEntry?.iconUrl ? (
+            <img src={appEntry.iconUrl} alt="" className="h-4 w-4 shrink-0 rounded" loading="lazy" />
+          ) : (
+            <span className="h-4 w-4 shrink-0 rounded bg-hairline" />
           )}
+          <span className="min-w-0 truncate text-xs font-medium text-ink">
+            {displayName}
+            {isOwn && <span className="text-accent-text"> · yours</span>}
+          </span>
         </div>
-        <p className="text-sm font-medium text-gray-900 leading-snug line-clamp-2">{displayName}</p>
-        {publisher ? <p className="text-xs text-gray-500 truncate">{publisher}</p> : null}
-        <p className="text-xs text-gray-500">
-          Running {creative.durationDays}d · First seen {creative.firstSeen}
-        </p>
+        {hookTheme && <p className="truncate text-xs text-ink-2">{hookTheme}</p>}
+        <p className="truncate text-[11px] text-ink-muted">{evidenceLine(creative)}</p>
       </div>
     </div>
   );

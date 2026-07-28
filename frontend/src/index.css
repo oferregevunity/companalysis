@@ -13,6 +13,36 @@
   --color-primary-800: #185abc;
   --color-primary-900: #174ea6;
   --color-primary-950: #0d47a1;
+
+  /* Creatives redesign (Nocturne on a light ground). Structure/type from the
+     handoff — light surfaces, one saturated section band, outlined actions. */
+  --color-ground: #f5f5f8; /* page ground */
+  --color-surface: #ffffff;
+  --color-line: #e4e4ec; /* border */
+  --color-hairline: #eef0f4;
+  --color-ink: #16171f; /* text */
+  --color-ink-2: #4a4b5a; /* text secondary */
+  --color-ink-muted: #7a7b8c; /* text muted */
+  --color-ink-faint: #a3a4b4; /* text faint */
+  --color-accent: #5b4fc4;
+  --color-accent-text: #4a3fae;
+  --color-accent-tint: #f1effb;
+  --color-accent-border: #cdc6ef;
+  /* Accent ramp for rank-shaded bars */
+  --color-accent-1: #5b4fc4;
+  --color-accent-2: #8478d4;
+  --color-accent-3: #a79bea;
+  --color-accent-4: #c2b9ef;
+  /* Section band ("This week's read") */
+  --color-band: #1e1b34;
+  --color-band-line: #3a3560;
+  --color-band-accent-line: #6f63d6;
+  --color-band-ink: #f0f0f5;
+  --color-band-ink-2: #b2b3c6;
+  --color-band-ink-3: #8f90a8;
+  --color-band-accent: #a79bea;
+  --color-band-accent-2: #c9c0f4;
+  --color-alert: #e8a08c; /* gap / missing signal */
 }
 
 body {

@@ -1,11 +1,14 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import {
+  arrayRemove,
+  arrayUnion,
   collection,
   doc,
   documentId,
   getDocs,
   onSnapshot,
   query,
+  setDoc,
   where,
 } from 'firebase/firestore';
 import { db } from '../lib/firebase';
@@ -77,5 +80,15 @@ export function useCreativeWatchlist() {
 
   const entries = appIds.length === 0 ? [] : resolvedEntries;
 
-  return { appIds, entries, loading, error };
+  const has = useCallback((appId: string) => appIds.includes(appId), [appIds]);
+
+  /** Add/remove an app from the team watchlist. onSnapshot reflects the change. */
+  const add = useCallback(async (appId: string) => {
+    await setDoc(doc(db, 'watchlist', 'team'), { appIds: arrayUnion(appId) }, { merge: true });
+  }, []);
+  const remove = useCallback(async (appId: string) => {
+    await setDoc(doc(db, 'watchlist', 'team'), { appIds: arrayRemove(appId) }, { merge: true });
+  }, []);
+
+  return { appIds, entries, loading, error, has, add, remove };
 }

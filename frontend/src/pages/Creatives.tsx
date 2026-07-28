@@ -3,31 +3,32 @@ import { useCreativeInsights } from '../hooks/useCreativeInsights';
 import { useCreativesForApps } from '../hooks/useCreativesForGenre';
 import { useGameWorkspace, useRecentWorkspaces, type GameWorkspace } from '../hooks/useGameWorkspace';
 import { useWorkspaceAnalysis } from '../hooks/useWorkspaceAnalysis';
-import { getLatestCreativeWeek } from '../lib/creativesWeek';
+import { useMarketPulse } from '../hooks/useMarketPulse';
+import { getCreativeWeekBounds, getLatestCreativeWeek } from '../lib/creativesWeek';
 import {
   discoverCompetitors,
   type DiscoveredCompetitor,
   type SearchedGame,
 } from '../lib/creativesApi';
-import { AIHighlightsStrip } from '../components/creatives/AIHighlightsStrip';
 import { CreativeGallery } from '../components/creatives/CreativeGallery';
 import { GameSearch } from '../components/creatives/GameSearch';
-import { CompetitorRail } from '../components/creatives/CompetitorRail';
-import { HookThemePanel } from '../components/creatives/HookThemePanel';
-import { FormatGapPanel } from '../components/creatives/FormatGapPanel';
-import { OpportunityPanel } from '../components/creatives/OpportunityPanel';
-import { MarketPulsePanel } from '../components/creatives/MarketPulsePanel';
+import { CreativesHeader } from '../components/creatives/CreativesHeader';
+import { EditSetDrawer } from '../components/creatives/EditSetDrawer';
+import { CreativeFilterRail } from '../components/creatives/CreativeFilterRail';
+import { WeeksReadBand, type GapRow, type RisingRow } from '../components/creatives/WeeksReadBand';
+import { GalleryTabs, type GalleryTab } from '../components/creatives/GalleryTabs';
+import { CreativeEmptyState, type ActiveFilterDesc, type RecoveryAction } from '../components/creatives/CreativeEmptyState';
+import { CreativeDetailModal } from '../components/creatives/CreativeDetailModal';
 import { durationBucket } from '../lib/creativeBuckets';
-import type { MarketApp } from '../lib/creativesApi';
 import {
+  aggregateHooksThemes,
   buildAppOptions,
-  CreativeFilters,
   defaultFilters,
   type Filters,
-} from '../components/creatives/CreativeFilters';
-import { CreativeDetailModal } from '../components/creatives/CreativeDetailModal';
+} from '../lib/creativeFilters';
+import { computeCreativeGaps, isCreativeInGap, type CreativeGaps } from '../lib/creativeGaps';
 import { useAppNames, type AppNameMapEntry } from '../hooks/useAppNames';
-import type { CreativeFormat, CreativeTag, QueryableAdNetwork } from '../types/creatives';
+import type { CreativeTag, QueryableAdNetwork, RisingConcept } from '../types/creatives';
 import type { JoinedCreative } from '../hooks/useCreativesForGenre';
 
 // Full SearchedGame JSON — the focused game comes from live Sensor Tower
@@ -99,6 +100,7 @@ function applyCreativeFilters(
   list: JoinedCreative[],
   filters: Filters,
   appNames: Map<string, AppNameMapEntry>,
+  focusAppId: string,
 ): JoinedCreative[] {
   const q = filters.search.trim().toLowerCase();
   let out = list;
@@ -113,33 +115,20 @@ function applyCreativeFilters(
     });
   }
 
-  if (filters.networks.size > 0) {
-    out = out.filter((c) => c.networks.some((n) => filters.networks.has(n)));
-  }
-
-  if (filters.formats.size > 0) {
-    out = out.filter((c) => filters.formats.has(c.format));
-  }
-
+  if (filters.hideOwnGame) out = out.filter((c) => c.appId !== focusAppId);
+  if (filters.networks.size > 0) out = out.filter((c) => c.networks.some((n) => filters.networks.has(n)));
+  if (filters.formats.size > 0) out = out.filter((c) => filters.formats.has(c.format));
   if (filters.durationBuckets.size > 0) {
     out = out.filter((c) => c.format === 'video' && filters.durationBuckets.has(durationBucket(c.videoDurationSec)));
   }
-
-  if (filters.appIds.size > 0) {
-    out = out.filter((c) => filters.appIds.has(c.appId));
-  }
-
+  if (filters.appIds.size > 0) out = out.filter((c) => filters.appIds.has(c.appId));
   if (filters.newThisWeek) {
     out = out.filter((c) => {
       const t = parseSeenMs(c.firstSeen);
-      if (t === null) return false;
-      return t >= Date.now() - 7 * 86400000;
+      return t !== null && t >= Date.now() - 7 * 86400000;
     });
   }
-
-  if (filters.winnersOnly) {
-    out = out.filter((c) => c.score != null && c.score >= 60);
-  }
+  if (filters.winnersOnly) out = out.filter((c) => c.score != null && c.score >= 60);
 
   const scoreVal = (c: JoinedCreative) => c.score ?? Number.NEGATIVE_INFINITY;
   const sovVal = (c: JoinedCreative) => c.maxShare ?? Number.NEGATIVE_INFINITY;
@@ -164,6 +153,29 @@ function applyCreativeFilters(
   return sorted;
 }
 
+/** The gallery tab presets — quick filters over the same list. */
+function applyTab(list: JoinedCreative[], tab: GalleryTab, gaps: CreativeGaps, focusAppId: string): JoinedCreative[] {
+  switch (tab) {
+    case 'winners':
+      return list.filter((c) => c.score != null && c.score >= 60);
+    case 'new':
+      return list.filter((c) => {
+        const t = parseSeenMs(c.firstSeen);
+        return t !== null && t >= Date.now() - 7 * 86400000;
+      });
+    case 'gaps':
+      return list.filter((c) => c.appId !== focusAppId && isCreativeInGap(c, gaps.gapFormats, gaps.gapDurations));
+    default:
+      return list;
+  }
+}
+
+/** True when the focus app isn't already running this rising concept. */
+function isMissingConcept(c: RisingConcept, focusHooks: Set<string>, focusThemes: Set<string>): boolean {
+  if (c.kind === 'hook') return !focusHooks.has(c.label);
+  return !focusThemes.has(c.label.toLowerCase());
+}
+
 function RecentGamesRow({
   onSelect,
   onRefresh,
@@ -181,11 +193,7 @@ function RecentGamesRow({
           key={r.focusApp.appId}
           className="inline-flex items-center gap-1.5 rounded-full border border-gray-200 bg-white py-1 pl-2.5 pr-1.5 text-xs font-medium text-gray-700 hover:border-blue-300 hover:bg-blue-50"
         >
-          <button
-            type="button"
-            onClick={() => onSelect(r.focusApp)}
-            className="inline-flex items-center gap-1.5"
-          >
+          <button type="button" onClick={() => onSelect(r.focusApp)} className="inline-flex items-center gap-1.5">
             {r.focusApp.iconUrl && <img src={r.focusApp.iconUrl} alt="" className="w-4 h-4 rounded" />}
             {r.focusApp.name}
             {r.updatedAt && <span className="text-[10px] text-gray-400">{formatTimeAgo(r.updatedAt)}</span>}
@@ -222,6 +230,9 @@ export default function Creatives() {
   const [focusApp, setFocusApp] = useState<SearchedGame | null>(() => loadStoredFocusApp());
   const [filters, setFilters] = useState<Filters>(() => defaultFilters());
   const [detailDocId, setDetailDocId] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<GalleryTab>('all');
+  const [editSetOpen, setEditSetOpen] = useState(false);
+  const pageRef = useRef<HTMLDivElement>(null);
 
   const latestWeek = useMemo(() => getLatestCreativeWeek(), []);
   const scopeId = focusApp ? `game_${focusApp.appId}` : '';
@@ -262,7 +273,6 @@ export default function Creatives() {
           setCompetitors(found);
           const selected = found.slice(0, DEFAULT_SELECTED).map((c) => c.appId);
           setSelectedIds(new Set(selected));
-          // First save creates the shared workspace doc.
           void save({
             focusApp: game,
             competitors: found,
@@ -280,8 +290,7 @@ export default function Creatives() {
     [save],
   );
 
-  // Hydrate curation state once per focused game: from the stored workspace
-  // when it exists, otherwise via AI discovery.
+  // Hydrate curation state once per focused game.
   useEffect(() => {
     if (!focusApp || !workspaceLoaded) return;
     if (hydratedForRef.current === focusApp.appId) return;
@@ -303,6 +312,7 @@ export default function Creatives() {
     setSelectedIds(new Set());
     setDiscoveryError(null);
     setFilters(defaultFilters());
+    setActiveTab('all');
     try {
       localStorage.setItem(FOCUS_APP_KEY, JSON.stringify(game));
     } catch {
@@ -316,6 +326,7 @@ export default function Creatives() {
     setCompetitors([]);
     setSelectedIds(new Set());
     setFilters(defaultFilters());
+    setActiveTab('all');
     try {
       localStorage.removeItem(FOCUS_APP_KEY);
     } catch {
@@ -323,9 +334,6 @@ export default function Creatives() {
     }
   }, []);
 
-  // "Refresh" from the Recent row: open the game and re-run discovery,
-  // overwriting its saved competitor list. Pre-marking hydratedForRef stops
-  // the hydration effect from reloading the stale saved workspace first.
   const refreshRecent = useCallback(
     (game: SearchedGame) => {
       selectFocusApp(game);
@@ -336,38 +344,10 @@ export default function Creatives() {
     [selectFocusApp, runDiscovery],
   );
 
-  // Data for the workspace: creatives of focus + selected competitors, plus
-  // the workspace-scoped insight doc (same shape as the genre one was).
   const analysisAppIds = useMemo(() => {
     if (!focusApp) return [];
     return [focusApp.appId, ...competitors.filter((c) => selectedIds.has(c.appId)).map((c) => c.appId)];
   }, [focusApp, competitors, selectedIds]);
-
-  // Focus + selected competitors with store ids, for the country/OS market lookup.
-  const marketApps = useMemo<MarketApp[]>(() => {
-    if (!focusApp) return [];
-    const focus: MarketApp = {
-      appId: focusApp.appId,
-      iosAppId: focusApp.iosAppId,
-      androidAppId: focusApp.androidAppId,
-      isFocus: true,
-    };
-    const comps = competitors
-      .filter((c) => selectedIds.has(c.appId))
-      .map<MarketApp>((c) => ({
-        appId: c.appId,
-        iosAppId: c.iosAppId,
-        androidAppId: c.androidAppId,
-        isFocus: false,
-      }));
-    return [focus, ...comps];
-  }, [focusApp, competitors, selectedIds]);
-
-  const marketCategory = useMemo(
-    () => focusApp?.gameCategory ?? focusApp?.iosCategories[0] ?? null,
-    [focusApp],
-  );
-  const marketAndroidCategory = useMemo(() => focusApp?.androidCategories[0] ?? null, [focusApp]);
 
   const { data: insightDoc, loading: insightLoading } = useCreativeInsights(scopeId, latestWeek);
   const {
@@ -378,25 +358,16 @@ export default function Creatives() {
 
   const { run, start } = useWorkspaceAnalysis(latestWeek);
   const running = run.phase === 'fetching' || run.phase === 'analyzing';
+  const { data: pulse } = useMarketPulse();
 
   const startAnalysis = useCallback(
     (force: boolean) => {
       if (!focusApp || running) return;
       const targets = competitors
         .filter((c) => selectedIds.has(c.appId))
-        .map((c) => ({
-          appId: c.appId,
-          name: c.name,
-          publisherName: c.publisherName,
-          iconUrl: c.iconUrl,
-        }));
+        .map((c) => ({ appId: c.appId, name: c.name, publisherName: c.publisherName, iconUrl: c.iconUrl }));
       void start(
-        {
-          appId: focusApp.appId,
-          name: focusApp.name,
-          publisherName: focusApp.publisherName,
-          iconUrl: focusApp.iconUrl,
-        },
+        { appId: focusApp.appId, name: focusApp.name, publisherName: focusApp.publisherName, iconUrl: focusApp.iconUrl },
         targets,
         country,
         {
@@ -420,8 +391,7 @@ export default function Creatives() {
     });
   }, []);
 
-  // Persist curation edits (selection, country, manual adds) once state settles;
-  // skip the initial hydration pass so loading a workspace doesn't rewrite it.
+  // Persist curation edits once state settles; skip the initial hydration pass.
   const curationInitializedRef = useRef(false);
   useEffect(() => {
     if (!focusApp || discovering || competitors.length === 0) {
@@ -454,8 +424,6 @@ export default function Creatives() {
     setSelectedIds((prev) => new Set(prev).add(game.appId));
   }, []);
 
-  // Remove a competitor from the workspace entirely (not just deselect). The
-  // debounced persist effect below writes the pruned list to the shared doc.
   const removeCompetitor = useCallback((appId: string) => {
     setCompetitors((prev) => prev.filter((c) => c.appId !== appId));
     setSelectedIds((prev) => {
@@ -477,13 +445,11 @@ export default function Creatives() {
 
   const tagMap = useMemo(() => {
     const m = new Map<string, CreativeTag>();
-    for (const t of insightDoc?.creativeTags ?? []) {
-      m.set(t.creativeId, t);
-    }
+    for (const t of insightDoc?.creativeTags ?? []) m.set(t.creativeId, t);
     return m;
   }, [insightDoc]);
 
-  // Hooks/themes the focus app already runs — used to flag rising market concepts it's missing.
+  // Hooks/themes the focus app already runs — used to flag rising concepts it's missing.
   const focusTagSets = useMemo(() => {
     const hooks = new Set<string>();
     const themes = new Set<string>();
@@ -503,15 +469,7 @@ export default function Creatives() {
 
   const availableNetworks = useMemo(() => {
     const s = new Set<QueryableAdNetwork>();
-    for (const c of joinedCreatives) {
-      for (const n of c.networks) s.add(n);
-    }
-    return [...s].sort((a, b) => a.localeCompare(b));
-  }, [joinedCreatives]);
-
-  const availableFormats = useMemo(() => {
-    const s = new Set<CreativeFormat>();
-    for (const c of joinedCreatives) s.add(c.format);
+    for (const c of joinedCreatives) for (const n of c.networks) s.add(n);
     return [...s].sort((a, b) => a.localeCompare(b));
   }, [joinedCreatives]);
 
@@ -520,71 +478,170 @@ export default function Creatives() {
     [joinedCreatives, appNames],
   );
 
-  /** Everything except hook/theme filters — feeds the Hooks & themes panel so its counts stay stable. */
+  const focusAppId = focusApp?.appId ?? '';
+
+  /** Everything except hook/theme filters — feeds the rail counts so they stay stable. */
   const baseFilteredCreatives = useMemo(
-    () => applyCreativeFilters(joinedCreatives, filters, appNames),
-    [joinedCreatives, filters, appNames],
+    () => applyCreativeFilters(joinedCreatives, filters, appNames, focusAppId),
+    [joinedCreatives, filters, appNames, focusAppId],
   );
+
+  const gaps = useMemo(() => computeCreativeGaps(joinedCreatives, focusAppId), [joinedCreatives, focusAppId]);
 
   const filteredCreatives = useMemo(
     () => applyTagFilters(baseFilteredCreatives, filters, tagMap),
     [baseFilteredCreatives, filters, tagMap],
   );
 
-  const toggleAppFilter = useCallback((appId: string) => {
-    setFilters((prev) => {
-      const next = new Set(prev.appIds);
-      if (next.has(appId)) next.delete(appId);
-      else next.add(appId);
-      return { ...prev, appIds: next };
-    });
+  const galleryCreatives = useMemo(
+    () => applyTab(filteredCreatives, activeTab, gaps, focusAppId),
+    [filteredCreatives, activeTab, gaps, focusAppId],
+  );
+
+  // Rail aggregation (stable, over the pre-tag-filter list).
+  const railAgg = useMemo(() => aggregateHooksThemes(baseFilteredCreatives, tagMap), [baseFilteredCreatives, tagMap]);
+  // Band aggregation (over the whole set — the band resets filters when clicked).
+  const bandAgg = useMemo(() => aggregateHooksThemes(joinedCreatives, tagMap), [joinedCreatives, tagMap]);
+
+  const creativeCountByApp = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const c of joinedCreatives) m.set(c.appId, (m.get(c.appId) ?? 0) + 1);
+    return m;
+  }, [joinedCreatives]);
+
+  const tabCounts = useMemo<Record<GalleryTab, number>>(
+    () => ({
+      winners: applyTab(baseFilteredCreatives, 'winners', gaps, focusAppId).length,
+      new: applyTab(baseFilteredCreatives, 'new', gaps, focusAppId).length,
+      gaps: applyTab(baseFilteredCreatives, 'gaps', gaps, focusAppId).length,
+      all: baseFilteredCreatives.length,
+    }),
+    [baseFilteredCreatives, gaps, focusAppId],
+  );
+
+  // ---- Band cards ------------------------------------------------------------
+  const scrollGalleryTop = useCallback(() => {
+    const main = pageRef.current?.closest('main');
+    main?.scrollTo({ top: 0, behavior: 'smooth' });
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   }, []);
 
-  const toggleHookType = useCallback((hook: string) => {
-    setFilters((prev) => {
-      const next = new Set(prev.hookTypes);
-      if (next.has(hook)) next.delete(hook);
-      else next.add(hook);
-      return { ...prev, hookTypes: next };
-    });
-  }, []);
+  const applyShortcut = useCallback(
+    (partial: Partial<Filters>, tab: GalleryTab = 'all') => {
+      setFilters({ ...defaultFilters(), ...partial });
+      setActiveTab(tab);
+      scrollGalleryTop();
+    },
+    [scrollGalleryTop],
+  );
 
-  const toggleTheme = useCallback((theme: string) => {
-    setFilters((prev) => {
-      const next = new Set(prev.themes);
-      if (next.has(theme)) next.delete(theme);
-      else next.add(theme);
-      return { ...prev, themes: next };
-    });
-  }, []);
+  const copyThisCard = useMemo(() => {
+    const top = bandAgg.hooks[0];
+    if (!top) return null;
+    return {
+      hook: top.hookType,
+      count: top.count,
+      thumbs: top.examples.slice(0, 4).map((c) => c.thumbnailUrl ?? c.mediaUrl ?? null),
+    };
+  }, [bandAgg]);
 
-  const toggleDurationBucket = useCallback((bucket: string) => {
-    setFilters((prev) => {
-      const next = new Set(prev.durationBuckets);
-      if (next.has(bucket)) next.delete(bucket);
-      else next.add(bucket);
-      return { ...prev, durationBuckets: next };
-    });
-  }, []);
+  const gapRows = useMemo<GapRow[]>(() => {
+    const rows: GapRow[] = [];
+    for (const r of gaps.lengths) if (r.key !== 'unknown' && r.focusCount === 0 && r.compGames >= 2 && r.compCount >= 3)
+      rows.push({ key: r.key, compCount: r.compCount, you: r.focusCount });
+    for (const r of gaps.formats) if (r.focusCount === 0 && r.compGames >= 2 && r.compCount >= 3)
+      rows.push({ key: r.key === 'unknown' ? 'Unknown' : r.key.charAt(0).toUpperCase() + r.key.slice(1), compCount: r.compCount, you: r.focusCount });
+    return rows.sort((a, b) => b.compCount - a.compCount).slice(0, 3);
+  }, [gaps]);
 
-  const toggleFormatFilter = useCallback((format: CreativeFormat) => {
-    setFilters((prev) => {
-      const next = new Set(prev.formats);
-      if (next.has(format)) next.delete(format);
-      else next.add(format);
-      return { ...prev, formats: next };
-    });
-  }, []);
+  const gapTotal = useMemo(
+    () => joinedCreatives.filter((c) => c.appId !== focusAppId && isCreativeInGap(c, gaps.gapFormats, gaps.gapDurations)).length,
+    [joinedCreatives, gaps, focusAppId],
+  );
 
-  const toggleNetworkFilter = useCallback((network: QueryableAdNetwork) => {
-    setFilters((prev) => {
-      const next = new Set(prev.networks);
-      if (next.has(network)) next.delete(network);
-      else next.add(network);
-      return { ...prev, networks: next };
-    });
-  }, []);
+  const risingData = useMemo(() => {
+    if (!pulse) return { rows: [] as RisingRow[], total: 0, hookLabels: new Set<string>(), themes: new Set<string>() };
+    const ranked = [...pulse.risingConcepts]
+      .map((c) => ({ c, missing: isMissingConcept(c, focusTagSets.hooks, focusTagSets.themes) }))
+      .sort((a, b) => {
+        if (a.missing !== b.missing) return a.missing ? -1 : 1;
+        if (a.c.isNew !== b.c.isNew) return a.c.isNew ? -1 : 1;
+        return (b.c.wowGrowthPct ?? 0) - (a.c.wowGrowthPct ?? 0);
+      });
+    const rows: RisingRow[] = ranked.slice(0, 3).map(({ c, missing }) => ({
+      label: c.title || c.label,
+      delta: c.isNew ? 'NEW' : c.wowGrowthPct != null ? `+${c.wowGrowthPct}%` : '',
+      missing,
+    }));
+    const hookLabels = new Set(ranked.filter((x) => x.c.kind === 'hook').map((x) => x.c.label));
+    const themes = new Set(ranked.filter((x) => x.c.kind === 'theme').map((x) => x.c.label.toLowerCase()));
+    const total = joinedCreatives.filter((c) => {
+      const t = tagMap.get(c.docId);
+      if (!t) return false;
+      if (hookLabels.has(t.hookType)) return true;
+      return t.themes.some((th) => themes.has(th.trim().toLowerCase()));
+    }).length;
+    return { rows, total, hookLabels, themes };
+  }, [pulse, focusTagSets, joinedCreatives, tagMap]);
 
+  // ---- Empty-state recovery --------------------------------------------------
+  const galleryCountFor = useCallback(
+    (f: Filters, tab: GalleryTab) =>
+      applyTab(applyTagFilters(applyCreativeFilters(joinedCreatives, f, appNames, focusAppId), f, tagMap), tab, gaps, focusAppId).length,
+    [joinedCreatives, appNames, focusAppId, tagMap, gaps],
+  );
+
+  const activeFilterDescs = useMemo<ActiveFilterDesc[]>(() => {
+    const out: ActiveFilterDesc[] = [];
+    if (filters.search.trim()) out.push({ label: `"${filters.search.trim()}"`, isAiTag: false });
+    for (const n of filters.networks) out.push({ label: n, isAiTag: false });
+    for (const f of filters.formats) out.push({ label: f === 'unknown' ? 'Unknown' : f.charAt(0).toUpperCase() + f.slice(1), isAiTag: false });
+    for (const b of filters.durationBuckets) out.push({ label: b, isAiTag: false });
+    for (const id of filters.appIds) out.push({ label: appNames.get(id)?.name ?? id, isAiTag: false });
+    for (const h of filters.hookTypes) out.push({ label: h, isAiTag: true });
+    for (const t of filters.themes) out.push({ label: t, isAiTag: true });
+    if (filters.newThisWeek) out.push({ label: 'New this week', isAiTag: false });
+    if (filters.winnersOnly) out.push({ label: 'Winners only', isAiTag: false });
+    if (filters.hideOwnGame) out.push({ label: 'Hide my own game', isAiTag: false });
+    if (activeTab !== 'all') out.push({ label: activeTab === 'new' ? 'New this week' : activeTab === 'gaps' ? 'Your gaps' : 'Winners', isAiTag: false });
+    return out;
+  }, [filters, appNames, activeTab]);
+
+  const recovery = useMemo<RecoveryAction | null>(() => {
+    type Cand = { label: string; count: number; apply: () => void };
+    const cands: Cand[] = [];
+    const withF = (patch: Partial<Filters>): Filters => ({ ...filters, ...patch });
+    const delFrom = <T,>(set: Set<T>, v: T) => {
+      const n = new Set(set);
+      n.delete(v);
+      return n;
+    };
+    const push = (label: string, f: Filters, tab: GalleryTab, apply: () => void) => {
+      const count = galleryCountFor(f, tab);
+      if (count > 0) cands.push({ label: `Drop "${label}" → ${count} result${count === 1 ? '' : 's'}`, count, apply });
+    };
+
+    if (filters.search.trim()) push('search', withF({ search: '' }), activeTab, () => setFilters((p) => ({ ...p, search: '' })));
+    for (const n of filters.networks) push(n, withF({ networks: delFrom(filters.networks, n) }), activeTab, () => setFilters((p) => ({ ...p, networks: delFrom(p.networks, n) })));
+    for (const f of filters.formats) push(f === 'unknown' ? 'Unknown' : f.charAt(0).toUpperCase() + f.slice(1), withF({ formats: delFrom(filters.formats, f) }), activeTab, () => setFilters((p) => ({ ...p, formats: delFrom(p.formats, f) })));
+    for (const b of filters.durationBuckets) push(b, withF({ durationBuckets: delFrom(filters.durationBuckets, b) }), activeTab, () => setFilters((p) => ({ ...p, durationBuckets: delFrom(p.durationBuckets, b) })));
+    for (const id of filters.appIds) push(appNames.get(id)?.name ?? id, withF({ appIds: delFrom(filters.appIds, id) }), activeTab, () => setFilters((p) => ({ ...p, appIds: delFrom(p.appIds, id) })));
+    for (const h of filters.hookTypes) push(h, withF({ hookTypes: delFrom(filters.hookTypes, h) }), activeTab, () => setFilters((p) => ({ ...p, hookTypes: delFrom(p.hookTypes, h) })));
+    for (const t of filters.themes) push(t, withF({ themes: delFrom(filters.themes, t) }), activeTab, () => setFilters((p) => ({ ...p, themes: delFrom(p.themes, t) })));
+    if (filters.newThisWeek) push('New this week', withF({ newThisWeek: false }), activeTab, () => setFilters((p) => ({ ...p, newThisWeek: false })));
+    if (filters.winnersOnly) push('Winners only', withF({ winnersOnly: false }), activeTab, () => setFilters((p) => ({ ...p, winnersOnly: false })));
+    if (filters.hideOwnGame) push('Hide my own game', withF({ hideOwnGame: false }), activeTab, () => setFilters((p) => ({ ...p, hideOwnGame: false })));
+    if (activeTab !== 'all') {
+      const count = galleryCountFor(filters, 'all');
+      if (count > 0) cands.push({ label: `Show all → ${count} result${count === 1 ? '' : 's'}`, count, apply: () => setActiveTab('all') });
+    }
+
+    cands.sort((a, b) => b.count - a.count);
+    const best = cands[0];
+    return best ? { label: best.label, onApply: best.apply } : null;
+  }, [filters, activeTab, appNames, galleryCountFor]);
+
+  // ---- Detail / status -------------------------------------------------------
   const detailCreative = useMemo(
     () => (detailDocId ? joinedCreatives.find((c) => c.docId === detailDocId) ?? null : null),
     [joinedCreatives, detailDocId],
@@ -599,203 +656,189 @@ export default function Creatives() {
     return d ? formatTimeAgo(d) : null;
   }, [insightDoc?.generatedAt]);
 
-  const onScrollToCreative = useCallback((docId: string) => {
-    document.getElementById(`creative-${docId}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-  }, []);
+  const weekLabel = useMemo(() => {
+    const { startDate } = getCreativeWeekBounds(latestWeek);
+    const d = new Date(`${startDate}T00:00:00Z`);
+    return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC' });
+  }, [latestWeek]);
 
   const fetchProgress = useMemo(() => {
     let done = 0;
-    for (const s of run.appStatuses.values()) {
-      if (s.state === 'done' || s.state === 'error') done += 1;
-    }
+    for (const s of run.appStatuses.values()) if (s.state === 'done' || s.state === 'error') done += 1;
     return { done, total: run.appStatuses.size };
   }, [run.appStatuses]);
 
-  const hasResults = joinedCreatives.length > 0 || insightDoc != null;
+  const hasCreatives = joinedCreatives.length > 0;
+  const aiChips = useMemo(
+    () => [
+      ...[...filters.hookTypes].map((h) => ({ key: `h-${h}`, label: h, onRemove: () => setFilters((p) => { const n = new Set(p.hookTypes); n.delete(h); return { ...p, hookTypes: n }; }) })),
+      ...[...filters.themes].map((t) => ({ key: `t-${t}`, label: t, onRemove: () => setFilters((p) => { const n = new Set(p.themes); n.delete(t); return { ...p, themes: n }; }) })),
+    ],
+    [filters.hookTypes, filters.themes],
+  );
 
-  return (
-    <div className="space-y-6">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+  // ---- No focus game: search-first entry ------------------------------------
+  if (!focusApp) {
+    return (
+      <div className="space-y-6">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Creatives</h1>
-          <p className="mt-1 text-xs text-gray-500">
-            Pick a game, get its competitors, see what's working in their ads.
-          </p>
+          <p className="mt-1 text-xs text-gray-500">Pick a game, get its competitors, see what's working in their ads.</p>
         </div>
-        {focusApp && hasResults && (
-          <div className="flex items-center gap-3">
-            <span className="text-sm text-gray-500">
-              {insightLoading && !insightDoc
-                ? 'Loading status…'
-                : lastAnalyzed
-                  ? `Analyzed ${lastAnalyzed}`
-                  : 'Not analyzed yet.'}
-            </span>
-            <button
-              type="button"
-              onClick={() => startAnalysis(true)}
-              disabled={running || discovering}
-              className="rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
-              title="Re-fetch this week's creatives for all selected games and re-run the analysis"
-            >
-              Refresh
-            </button>
-          </div>
-        )}
-      </div>
-
-      <GameSearch focusApp={focusApp} onSelect={selectFocusApp} onClear={clearFocusApp} />
-
-      {!focusApp && <RecentGamesRow onSelect={selectFocusApp} onRefresh={refreshRecent} />}
-
-      {!focusApp && (
+        <GameSearch focusApp={null} onSelect={selectFocusApp} onClear={clearFocusApp} />
+        <RecentGamesRow onSelect={selectFocusApp} onRefresh={refreshRecent} />
         <div className="rounded-xl border border-gray-200 bg-white p-10 text-center shadow-sm">
           <h3 className="text-sm font-semibold text-gray-900 mb-1">Start with your game</h3>
           <p className="text-sm text-gray-500">
-            Search any game above — AI finds its competitors, pulls their live ad creatives from Sensor
-            Tower, and breaks down which hooks and themes are working.
+            Search any game above — AI finds its competitors, pulls their live ad creatives from Sensor Tower, and breaks
+            down which hooks and themes are working.
           </p>
         </div>
-      )}
+      </div>
+    );
+  }
 
-      {focusApp && (
-        <CompetitorRail
-          focusApp={focusApp}
-          competitors={competitors}
-          selectedIds={selectedIds}
-          discovering={discovering || (!workspaceLoaded && competitors.length === 0)}
-          discoveryError={discoveryError}
-          country={country}
-          running={running}
-          appStatuses={run.appStatuses}
-          creatives={joinedCreatives}
-          galleryAppIds={filters.appIds}
-          onToggleSelected={toggleSelected}
-          onToggleGalleryApp={toggleAppFilter}
-          onRemoveCompetitor={removeCompetitor}
-          onShowAllCreatives={() => setFilters((prev) => ({ ...prev, appIds: new Set() }))}
-          onAddCompetitor={addCompetitor}
-          onCountryChange={setCountry}
-          onAnalyze={() => startAnalysis(false)}
-          onRetryDiscovery={() => focusApp && runDiscovery(focusApp, country)}
-        />
-      )}
+  const railProps = {
+    focusApp,
+    competitors,
+    selectedIds,
+    discovering: discovering || (!workspaceLoaded && competitors.length === 0),
+    discoveryError,
+    country,
+    running,
+    appStatuses: run.appStatuses,
+    creatives: joinedCreatives,
+    galleryAppIds: filters.appIds,
+    onToggleSelected: toggleSelected,
+    onToggleGalleryApp: (id: string) => setFilters((p) => { const n = new Set(p.appIds); if (n.has(id)) n.delete(id); else n.add(id); return { ...p, appIds: n }; }),
+    onRemoveCompetitor: removeCompetitor,
+    onShowAllCreatives: () => setFilters((p) => ({ ...p, appIds: new Set<string>() })),
+    onAddCompetitor: addCompetitor,
+    onCountryChange: setCountry,
+    onAnalyze: () => startAnalysis(false),
+    onRetryDiscovery: () => focusApp && runDiscovery(focusApp, country),
+  };
 
-      {focusApp && running && (
-        <div className="flex items-center gap-3 rounded-xl border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-800">
-          <span className="w-3.5 h-3.5 shrink-0 rounded-full border-2 border-blue-200 border-t-blue-600 animate-spin" />
-          {run.phase === 'fetching' ? (
-            <span>
-              Fetching creatives… {fetchProgress.done}/{fetchProgress.total} games
-              <span className="text-blue-500"> · cached games are instant</span>
-            </span>
-          ) : (
-            <span>Scoring and running AI analysis…</span>
-          )}
+  return (
+    <div ref={pageRef} className="-m-6 bg-ground lg:-m-8">
+      <CreativesHeader
+        focusApp={focusApp}
+        competitors={competitors}
+        selectedIds={selectedIds}
+        creativeCount={joinedCreatives.length}
+        gameCount={analysisAppIds.length}
+        country={country}
+        weekLabel={weekLabel}
+        lastAnalyzed={lastAnalyzed}
+        statusLoading={insightLoading && !insightDoc}
+        busy={running || discovering}
+        creativeCountByApp={creativeCountByApp}
+        onCountryChange={setCountry}
+        onRefresh={refreshCreatives}
+        onReanalyze={() => startAnalysis(true)}
+        onEditSet={() => setEditSetOpen(true)}
+        onChangeGame={clearFocusApp}
+      />
+
+      {running && (
+        <div className="flex items-center gap-2 border-b border-line bg-accent-tint px-7 py-2 text-xs text-accent-text">
+          <span className="h-3 w-3 shrink-0 animate-spin rounded-full border-2 border-accent-border border-t-accent" />
+          {run.phase === 'fetching'
+            ? `Fetching creatives… ${fetchProgress.done}/${fetchProgress.total} games · cached games are instant`
+            : 'Scoring and running AI analysis…'}
         </div>
       )}
-
-      {focusApp && !running && run.phase === 'error' && run.error && (
-        <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+      {!running && run.phase === 'error' && run.error && (
+        <div className="border-b border-red-200 bg-red-50 px-7 py-2 text-xs text-red-700">
           Analysis failed: {run.error}{' '}
-          <button
-            type="button"
-            onClick={() => startAnalysis(false)}
-            className="font-semibold underline hover:no-underline"
-          >
+          <button type="button" onClick={() => startAnalysis(false)} className="font-semibold underline">
             Retry
           </button>
         </div>
       )}
 
-      {focusApp && hasResults && (
+      {hasCreatives ? (
         <>
-          <AIHighlightsStrip
-            insightDoc={insightDoc}
-            joinedCreatives={joinedCreatives}
-            loading={insightLoading}
-            onScrollToCreative={onScrollToCreative}
+          <WeeksReadBand
+            verdict={insightDoc?.summary?.trim() ? insightDoc.summary : null}
+            copyThis={copyThisCard}
+            gaps={gapRows}
+            gapTotal={gapTotal}
+            rising={risingData.rows}
+            risingTotal={risingData.total}
+            onCopyThis={() => copyThisCard && applyShortcut({ hookTypes: new Set([copyThisCard.hook]) })}
+            onShowGaps={() => applyShortcut({}, 'gaps')}
+            onShowRising={() => applyShortcut({ hookTypes: risingData.hookLabels, themes: risingData.themes })}
           />
 
-          <HookThemePanel
-            tagMap={tagMap}
-            creatives={baseFilteredCreatives}
-            selectedHookTypes={filters.hookTypes}
-            selectedThemes={filters.themes}
-            onToggleHookType={toggleHookType}
-            onToggleTheme={toggleTheme}
-            hasInsightDoc={insightDoc != null}
-          />
-
-          {focusApp && (
-            <FormatGapPanel
-              creatives={joinedCreatives}
-              focusAppId={focusApp.appId}
-              selectedFormats={filters.formats}
-              selectedDurationBuckets={filters.durationBuckets}
-              onToggleFormat={toggleFormatFilter}
-              onToggleDurationBucket={toggleDurationBucket}
-            />
-          )}
-
-          {focusApp && (
-            <OpportunityPanel
-              creatives={joinedCreatives}
-              focusAppId={focusApp.appId}
-              marketApps={marketApps}
-              category={marketCategory}
-              androidCategory={marketAndroidCategory}
-              primaryCountry={country}
-              appNames={appNames}
-              selectedNetworks={filters.networks}
-              onToggleNetwork={toggleNetworkFilter}
-            />
-          )}
-
-          <MarketPulsePanel focusHookTypes={focusTagSets.hooks} focusThemes={focusTagSets.themes} />
-        </>
-      )}
-
-      {focusApp &&
-        (creativesLoading ? (
-          <div className="text-center py-12 text-gray-400">Loading creatives…</div>
-        ) : joinedCreatives.length === 0 ? (
-          !running &&
-          !discovering && (
-            <div className="text-center py-12 text-gray-400">
-              No creatives yet — hit "Analyze creatives" above to fetch this set from Sensor Tower and
-              analyze it.
-            </div>
-          )
-        ) : (
-          <>
-            <CreativeFilters
+          <div className="flex items-start">
+            <CreativeFilterRail
               filters={filters}
               setFilters={setFilters}
+              onClear={() => { setFilters(defaultFilters()); setActiveTab('all'); }}
+              baseFilteredCreatives={baseFilteredCreatives}
+              hookAggs={railAgg.hooks}
+              themeAggs={railAgg.themes}
               availableNetworks={availableNetworks}
-              availableFormats={availableFormats}
               appOptions={appOptions}
+              appNames={appNames}
+              focusAppId={focusAppId}
             />
-            {filteredCreatives.length === 0 ? (
-              <div className="text-center py-12 text-gray-400">No creatives match your filters.</div>
-            ) : (
-              <CreativeGallery
-                creatives={filteredCreatives}
-                rankMap={rankMap}
-                appNames={appNames}
-                tagMap={tagMap}
-                onOpen={setDetailDocId}
+            <div className="min-w-0 flex-1 px-7 pb-8 pt-[18px]">
+              <GalleryTabs
+                activeTab={activeTab}
+                counts={tabCounts}
+                onSelect={setActiveTab}
+                aiChips={aiChips}
+                sort={filters.sort}
+                onSortChange={(sort) => setFilters((p) => ({ ...p, sort }))}
               />
-            )}
-          </>
-        ))}
+              {galleryCreatives.length === 0 ? (
+                <CreativeEmptyState
+                  activeFilters={activeFilterDescs}
+                  recovery={recovery}
+                  onClearAll={() => { setFilters(defaultFilters()); setActiveTab('all'); }}
+                />
+              ) : (
+                <CreativeGallery
+                  creatives={galleryCreatives}
+                  rankMap={rankMap}
+                  appNames={appNames}
+                  tagMap={tagMap}
+                  focusAppId={focusAppId}
+                  onOpen={setDetailDocId}
+                />
+              )}
+            </div>
+          </div>
+        </>
+      ) : (
+        <div className="px-7 py-16 text-center text-sm text-ink-muted">
+          {creativesLoading || discovering ? (
+            'Loading creatives…'
+          ) : (
+            <>
+              No creatives yet.{' '}
+              <button type="button" onClick={() => setEditSetOpen(true)} className="font-medium text-accent-text underline">
+                Open the set
+              </button>{' '}
+              to fetch this week from Sensor Tower, or hit Re-analyze.
+            </>
+          )}
+        </div>
+      )}
+
+      <EditSetDrawer open={editSetOpen} onClose={() => setEditSetOpen(false)} {...railProps} />
 
       <CreativeDetailModal
+        key={detailDocId ?? 'closed'}
         open={detailDocId != null}
         onClose={() => setDetailDocId(null)}
         creative={detailCreative}
         insightDoc={insightDoc}
         appEntry={detailCreative ? appNames.get(detailCreative.appId) : undefined}
+        rank={detailCreative ? rankMap.get(detailCreative.docId) : undefined}
+        country={country}
       />
     </div>
   );
