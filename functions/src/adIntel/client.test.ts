@@ -35,6 +35,30 @@ describe('parseRawCreative', () => {
     expect(parsed.mediaUrl).toBe(multi.creatives[0].creative_url);
   });
 
+  it('captures the interactive html_url for playable creatives', () => {
+    const parsed = parseRawCreative(
+      {
+        id: 'play-1',
+        app_id: '553834731',
+        network: 'Applovin',
+        phashion_group: 'ph-play',
+        ad_type: 'playable',
+        first_seen_at: '2026-05-01',
+        last_seen_at: '2026-05-10',
+        creatives: [
+          {
+            creative_url: 'https://x-ad-assets.s3.amazonaws.com/media_asset/abc/media',
+            thumb_url: 'https://x-ad-assets.s3.amazonaws.com/media_asset/abc/thumb',
+            html_url: 'https://x-ad-assets.s3.amazonaws.com/media_asset/abc/index.html',
+          },
+        ],
+      },
+      'US'
+    );
+    expect(parsed.format).toBe('playable');
+    expect(parsed.htmlUrl).toBe('https://x-ad-assets.s3.amazonaws.com/media_asset/abc/index.html');
+  });
+
   it('coerces missing fields to null (never undefined)', () => {
     const parsed = parseRawCreative(
       {
@@ -52,6 +76,7 @@ describe('parseRawCreative', () => {
     expect(parsed.mediaUrl).toBeNull();
     expect(parsed.previewUrl).toBeNull();
     expect(parsed.thumbnailUrl).toBeNull();
+    expect(parsed.htmlUrl).toBeNull();
     expect(parsed.videoDurationSec).toBeNull();
     expect(parsed.width).toBeNull();
     expect(parsed.height).toBeNull();

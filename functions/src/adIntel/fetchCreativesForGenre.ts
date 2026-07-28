@@ -28,6 +28,8 @@ export interface StoredCreative {
   mediaUrl: string | null;
   previewUrl: string | null;
   thumbnailUrl: string | null;
+  /** Playables only: interactive HTML entry point; null for video/image. */
+  htmlUrl: string | null;
   videoDurationSec: number | null;
   width: number | null;
   height: number | null;
@@ -104,6 +106,7 @@ function rawToStored(raw: RawCreative, genreId: string, capturedWeek: string): S
     mediaUrl: raw.mediaUrl,
     previewUrl: raw.previewUrl,
     thumbnailUrl: raw.thumbnailUrl,
+    htmlUrl: raw.htmlUrl,
     videoDurationSec: raw.videoDurationSec,
     width: raw.width,
     height: raw.height,
@@ -136,6 +139,7 @@ function mergeStored(existing: StoredCreative, raw: RawCreative): StoredCreative
     mediaUrl: existing.mediaUrl ?? raw.mediaUrl,
     previewUrl: existing.previewUrl ?? raw.previewUrl,
     thumbnailUrl: existing.thumbnailUrl ?? raw.thumbnailUrl,
+    htmlUrl: existing.htmlUrl ?? raw.htmlUrl,
     videoDurationSec: existing.videoDurationSec ?? raw.videoDurationSec,
     width: existing.width ?? raw.width,
     height: existing.height ?? raw.height,

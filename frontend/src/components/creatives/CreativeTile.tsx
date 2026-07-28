@@ -47,6 +47,9 @@ export function CreativeTile({ creative, rankBadge, appEntry, tag, isOwn, onOpen
   // of players are ever alive.
   const [isHovering, setIsHovering] = useState(false);
   const isVideo = creative.format === 'video' && !!creative.mediaUrl;
+  // Playables get the same play affordance, but no hover-preview — we don't want
+  // to spin up an iframe per tile. Tapping opens the modal, which plays the HTML.
+  const isPlayable = creative.format === 'playable' && !!creative.htmlUrl;
   const poster = creative.thumbnailUrl ?? creative.mediaUrl ?? PLACEHOLDER_SVG;
 
   const hookTheme = tag ? [tag.hookType, ...(tag.themes[0] ? [tag.themes[0]] : [])].join(' · ') : null;
@@ -84,7 +87,7 @@ export function CreativeTile({ creative, rankBadge, appEntry, tag, isOwn, onOpen
         ) : (
           <>
             <img src={poster} alt="" loading="lazy" className="h-full w-full object-cover" />
-            {isVideo && (
+            {(isVideo || isPlayable) && (
               <span className="pointer-events-none absolute inset-0 flex items-center justify-center">
                 <span className="flex h-9 w-9 items-center justify-center rounded-full bg-[rgba(22,23,31,0.55)]">
                   <svg viewBox="0 0 24 24" className="h-4 w-4 fill-white" aria-hidden>

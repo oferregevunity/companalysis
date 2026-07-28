@@ -107,6 +107,7 @@ export function parseRawCreative(adUnit: any, country: string): RawCreative {
     mediaUrl: primary.creative_url ?? null,
     previewUrl: primary.preview_url ?? null,
     thumbnailUrl: primary.thumb_url ?? null,
+    htmlUrl: primary.html_url ?? null,
     videoDurationSec:
       typeof primary.video_duration === 'number' ? primary.video_duration : null,
     width: typeof primary.width === 'number' ? primary.width : null,

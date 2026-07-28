@@ -34,6 +34,7 @@ function creative(docId: string): StoredCreative {
     mediaUrl: null,
     previewUrl: null,
     thumbnailUrl: null,
+    htmlUrl: null,
     videoDurationSec: null,
     width: null,
     height: null,
