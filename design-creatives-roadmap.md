@@ -17,10 +17,14 @@ deployed 2026-07-28). **Next:** #2 (competitor new-winner alerts).
 - [x] **#3 AI Concept Generator** — slice 1 (pure core) + slice 2 (route +
   `ConceptGeneratorModal`, header entry point); grounded in analyzed competitor
   videos; concepts persisted on the insight doc. Deployed.
+- [x] **Video-analysis failure diagnostics + on-demand cap** — reasons surfaced
+  to the modal + `console.warn` (no more silent "could not be read"); on-demand
+  cap 12 → 14.5 MB (inline ceiling). Deployed 2026-07-28.
 - [ ] #2 Competitor new-winner alerts (next — blocked on delivery-channel decision)
 - [ ] #4 Variant grouping
 - [ ] #5 Side-by-side compare
 - [ ] #6 Week-over-week trend
+- [ ] **Video foundation v2 — GCS `fileData` for oversize videos** (scoped below)
 
 Eight workstreams prioritized with RICE. This doc is the source of truth for
 scope + sequencing; each feature keeps its detail here until it ships.
@@ -84,6 +88,44 @@ oversize videos (>~12 MB raw) are skipped (non-fatal). **Tier it (DECIDED):** th
 batch job video-analyzes only the **top 10 ranked winners shown in the UI**
 (video format; the `rank <= 10` set) per workspace-week; everything else stays
 metadata-tagged. Deep per-video (#8) is on-demand in the detail modal.
+
+## Video foundation v2 — GCS `fileData` for oversize videos (SCOPED)
+
+**Why:** inline `inlineData` is capped by Vertex's ~20 MB request limit → raw
+video must be ≤ ~14.5 MB (on-demand) / 12 MB (batch). Real UA creatives blow
+past this: one tracked advertiser ("Tiles in Hole", `67dcb3c1af0c1ca713c96b38`)
+has 119 s videos at ~19.4 MB and a cluster of 30 s videos at ~14 MB. Those can
+only be analyzed by pointing Vertex at a `gs://` URI (`fileData`), which lifts
+the limit to GCS-file scale (well beyond our needs). This is the tier the
+original foundation deferred to dodge bucket + service-agent IAM + cleanup.
+
+**Approach — tiered, inline-first (no regression):**
+1. Download bytes + measure (as today).
+2. `≤ inline ceiling` → inline `inlineData` (current fast path, no GCS touched).
+3. `> ceiling and ≤ hard cap` → upload to GCS, call Vertex with
+   `fileData: { fileUri: 'gs://…', mimeType }`, analyze.
+4. `> hard cap` → skip with the clear reason we now surface.
+
+**Concrete bindings (this project):**
+- **Bucket:** new `companalysis-creative-cache` (or reuse the default app bucket)
+  with an **object lifecycle rule: delete after 1 day** — cleanup is automatic
+  and race-free, so no explicit delete in the hot path. Path
+  `creative-video-cache/{week}/{creativeId}.mp4`.
+- **IAM (the deferred cost, one-time):**
+  - Function runtime SA `907562912125-compute@developer.gserviceaccount.com` →
+    `roles/storage.objectAdmin` on the bucket (upload).
+  - **Vertex AI Service Agent**
+    `service-907562912125@gcp-sa-aiplatform.iam.gserviceaccount.com` →
+    `roles/storage.objectViewer` on the bucket (Vertex, not the function, reads
+    the `gs://` URI — this is the extra grant inline avoided).
+- **Code:** add `stageVideoToGcs()` beside `videoFetch.ts`; a `fileData` variant
+  of `vertexVideoGenerate` (fileUri instead of base64); a size branch in the
+  `analyzeWinnerVideos` worker. Everything stays non-fatal.
+
+**Open sub-decisions (see Open decisions):** dedicated vs default bucket; does
+the *batch* pass also use GCS or stay inline-only to bound cost; lifecycle-only
+cleanup vs explicit delete. **Effort:** ~1–2 days; risk is mostly the Vertex-SA
+IAM grant + `fileData` mime handling, not the code.
 
 ## Video-analysis overhaul (slide 14 → the prompt)
 
@@ -152,6 +194,12 @@ share over time + creative-fatigue (weeks-live). Needs ≥2–3 weeks of history
 ## Open decisions
 
 - **Alerts delivery channel** (#2): email vs Slack vs morning-briefing piggyback.
+- **GCS v2 — bucket:** dedicated `companalysis-creative-cache` vs reuse the
+  default app bucket.
+- **GCS v2 — batch scope:** does the top-10 batch pass also stage oversize videos
+  to GCS, or stay inline-only (cap cost/latency) with on-demand-only GCS?
+- **GCS v2 — cleanup:** lifecycle-rule-only (simplest) vs explicit post-analysis
+  delete.
 - **Slide reference:** "slide 14" read as deck section **#7 Iteration Loop**
   (cover + dividers counted). Confirm if the deck numbers differently.
 
