@@ -46,9 +46,11 @@ export function CreativeTile({ creative, rankBadge, appEntry, tag, isOwn, onOpen
   // default and only swap to <video> while hovered/focused so at most a handful
   // of players are ever alive.
   const [isHovering, setIsHovering] = useState(false);
+  const [playingInline, setPlayingInline] = useState(false);
   const isVideo = creative.format === 'video' && !!creative.mediaUrl;
-  // Playables get the same play affordance, but no hover-preview — we don't want
-  // to spin up an iframe per tile. Tapping opens the modal, which plays the HTML.
+  // Playables play inline in the tile on demand: clicking the play control swaps
+  // the poster for the interactive iframe (stopPropagation so it doesn't open the
+  // modal). No hover-preview — we don't spin up an iframe per tile until asked.
   const isPlayable = creative.format === 'playable' && !!creative.htmlUrl;
   const poster = creative.thumbnailUrl ?? creative.mediaUrl ?? PLACEHOLDER_SVG;
 
@@ -61,6 +63,8 @@ export function CreativeTile({ creative, rankBadge, appEntry, tag, isOwn, onOpen
       tabIndex={0}
       onClick={() => onOpen(creative.docId)}
       onKeyDown={(e) => {
+        // Ignore keys bubbling up from the inline-play button (it handles its own).
+        if (e.target !== e.currentTarget) return;
         if (e.key === 'Enter' || e.key === ' ') {
           e.preventDefault();
           onOpen(creative.docId);
@@ -73,7 +77,16 @@ export function CreativeTile({ creative, rankBadge, appEntry, tag, isOwn, onOpen
       className="cursor-pointer overflow-hidden rounded-lg border border-line bg-surface transition-colors hover:border-accent-border focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
     >
       <div className="relative aspect-[4/5] bg-[#dfe0e8]">
-        {isVideo && isHovering ? (
+        {isPlayable && playingInline ? (
+          <iframe
+            src={creative.htmlUrl!}
+            title={`${displayName} playable`}
+            // allow-scripts runs the playable; allow-same-origin lets it reach
+            // its own CDN assets. Cross-origin, so it can't touch our page.
+            sandbox="allow-scripts allow-same-origin allow-pointer-lock"
+            className="h-full w-full border-0 bg-white"
+          />
+        ) : isVideo && isHovering ? (
           <video
             src={creative.mediaUrl!}
             muted
@@ -87,7 +100,21 @@ export function CreativeTile({ creative, rankBadge, appEntry, tag, isOwn, onOpen
         ) : (
           <>
             <img src={poster} alt="" loading="lazy" className="h-full w-full object-cover" />
-            {(isVideo || isPlayable) && (
+            {isPlayable ? (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setPlayingInline(true);
+                }}
+                aria-label="Play playable"
+                className="absolute left-1/2 top-1/2 flex h-9 w-9 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-[rgba(22,23,31,0.55)] transition-transform hover:scale-110 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+              >
+                <svg viewBox="0 0 24 24" className="h-4 w-4 fill-white" aria-hidden>
+                  <path d="M8 5v14l11-7z" />
+                </svg>
+              </button>
+            ) : isVideo ? (
               <span className="pointer-events-none absolute inset-0 flex items-center justify-center">
                 <span className="flex h-9 w-9 items-center justify-center rounded-full bg-[rgba(22,23,31,0.55)]">
                   <svg viewBox="0 0 24 24" className="h-4 w-4 fill-white" aria-hidden>
@@ -95,7 +122,7 @@ export function CreativeTile({ creative, rankBadge, appEntry, tag, isOwn, onOpen
                   </svg>
                 </span>
               </span>
-            )}
+            ) : null}
           </>
         )}
 
