@@ -3,17 +3,17 @@ import {
   type VideoAnalysis,
   type VideoGenerate,
 } from './videoAnalysis';
-import { stageVideo, unstageVideo, type StagingBucket } from './videoStaging';
+import { fetchCreativeVideo } from './videoFetch';
 
 /**
  * Orchestrates video analysis for a workspace's top winners: for each of the
- * top-N ranked winners that is a video, stage the media to GCS, run the
- * per-video Iteration-Loop analysis, then clean up. Every step is non-fatal —
- * a creative that fails to stage or analyze is skipped, not thrown, so the
+ * top-N ranked winners that is a video, download the media and run the per-video
+ * Iteration-Loop analysis (inline to Vertex — no GCS). Every step is non-fatal —
+ * a creative that fails to download or analyze is skipped, not thrown, so the
  * workspace analysis never regresses on video errors.
  *
- * Staging/generation are injected so the selection + resilience logic is
- * unit-testable without real GCS or Vertex.
+ * Fetch/generation are injected so the selection + resilience logic is
+ * unit-testable without real network or Vertex.
  */
 
 export interface WinnerVideoInput {
@@ -29,15 +29,13 @@ export interface WinnerVideoInput {
 }
 
 export interface AnalyzeVideosDeps {
-  bucket: StagingBucket;
   week: string;
   focusAppId?: string;
   /** Only the top-N ranked winner videos are analyzed (matches the UI). Default 10. */
   maxVideos?: number;
-  /** Parallel video analyses in flight. Default 3 (Vertex + GCS friendly). */
+  /** Parallel video analyses in flight. Default 3 (Vertex-friendly). */
   concurrency?: number;
-  stage?: typeof stageVideo;
-  unstage?: typeof unstageVideo;
+  fetchVideo?: typeof fetchCreativeVideo;
   generate?: VideoGenerate;
 }
 
@@ -73,8 +71,7 @@ export async function analyzeWinnerVideos(
   winners: WinnerVideoInput[],
   deps: AnalyzeVideosDeps,
 ): Promise<AnalyzeVideosResult> {
-  const stage = deps.stage ?? stageVideo;
-  const unstage = deps.unstage ?? unstageVideo;
+  const fetchVideo = deps.fetchVideo ?? fetchCreativeVideo;
   const maxVideos = deps.maxVideos ?? 10;
   const concurrency = deps.concurrency ?? 3;
 
@@ -82,10 +79,8 @@ export async function analyzeWinnerVideos(
   let failed = 0;
 
   const settled = await runPool(selected, concurrency, async (w): Promise<VideoAnalysis | null> => {
-    let objectPath: string | null = null;
     try {
-      const staged = await stage(w.mediaUrl!, w.creativeId, deps.week, { bucket: deps.bucket });
-      objectPath = staged.objectPath;
+      const { base64, mimeType } = await fetchVideo(w.mediaUrl!, {});
       const analysis = await analyzeCreativeVideo(
         {
           creativeId: w.creativeId,
@@ -95,8 +90,8 @@ export async function analyzeWinnerVideos(
           title: w.title,
           message: w.message,
         },
-        staged.gsUri,
-        staged.mimeType,
+        base64,
+        mimeType,
         deps.generate,
       );
       if (!analysis) failed += 1;
@@ -104,8 +99,6 @@ export async function analyzeWinnerVideos(
     } catch {
       failed += 1;
       return null;
-    } finally {
-      if (objectPath) await unstage(objectPath, deps.bucket);
     }
   });
 

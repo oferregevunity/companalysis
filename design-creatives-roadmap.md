@@ -57,12 +57,14 @@ channel decision below.
 
 ## Shared foundation — multimodal video ingestion
 
-For each creative to deep-analyze: download `mediaUrl` → stage to a temp GCS
-bucket → pass to Gemini as `fileData` (`gs://`) → delete after. Vertex cannot
-fetch Sensor Tower's external HTTP `mediaUrl` directly. Cap/sample (~60s;
-Gemini samples ~1 fps) to bound cost. **Tier it (DECIDED):** the batch job video-
-analyzes only the **top 10 ranked winners shown in the UI** (video format; the
-`rank <= 10` set in `rankMap`) per workspace-week; everything else stays
+For each creative to deep-analyze: download `mediaUrl` in the function and pass
+the bytes to Gemini as an **`inlineData`** part — no GCS. Vertex can't fetch
+Sensor Tower's external HTTP `mediaUrl` directly, and its other option (`gs://`
+`fileData`) would need a bucket + service-agent IAM + cleanup; inline avoids all
+of that. Short UA creatives sit well under Vertex's ~20 MB inline request cap;
+oversize videos (>~12 MB raw) are skipped (non-fatal). **Tier it (DECIDED):** the
+batch job video-analyzes only the **top 10 ranked winners shown in the UI**
+(video format; the `rank <= 10` set) per workspace-week; everything else stays
 metadata-tagged. Deep per-video (#8) is on-demand in the detail modal.
 
 ## Video-analysis overhaul (slide 14 → the prompt)
@@ -85,14 +87,11 @@ Stored additively as `videoAnalyses[]` on the insight doc (separate from the
 metadata-only `creativeTags`), so nothing regresses. Consumed by the detail
 modal (#8) and, later, the filter rail (filter by motivation / element).
 
-**Deploy-time prerequisites (NOT verifiable locally — confirm on first run):**
-- The project needs a default GCS bucket; `getStorage().bucket()` must resolve.
-- The **Vertex AI service agent** must have read access to that bucket, or the
-  `fileData` gs:// read fails. If it does, the second pass logs and no-ops
-  (non-fatal) — the insight doc still writes.
-- Staged objects are deleted after each analysis; add a bucket lifecycle rule on
-  `tmp/creative-analysis/` as a backstop.
-- Cost: ≤10 short videos × 1 Gemini video call per workspace analysis.
+**Runtime notes:** no GCS, no extra IAM — the function just needs outbound HTTP
+to the Sensor Tower CDN (it already fetches ST) and Vertex AI enabled (already
+used). Cost: ≤10 short videos × 1 Gemini video call per workspace analysis. The
+whole pass is non-fatal — any download/parse failure is skipped and the insight
+doc still writes.
 
 ---
 

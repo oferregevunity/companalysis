@@ -244,26 +244,26 @@ export function parseVideoAnalysisResponse(raw: string, creativeId: string): Vid
   }
 }
 
-/** Runs a per-video prompt against a staged `gs://` URI. Injected for tests. */
-export type VideoGenerate = (prompt: string, gsUri: string, mimeType: string) => Promise<string>;
+/** Runs a per-video prompt against base64-encoded video bytes. Injected for tests. */
+export type VideoGenerate = (prompt: string, base64: string, mimeType: string) => Promise<string>;
 
-/** Default multimodal generate via Vertex Gemini (video part + text prompt). */
-export const vertexVideoGenerate: VideoGenerate = async (prompt, gsUri, mimeType) => {
+/** Default multimodal generate via Vertex Gemini (inline video part + text prompt). */
+export const vertexVideoGenerate: VideoGenerate = async (prompt, base64, mimeType) => {
   const vertexAI = new VertexAI({ project: PROJECT_ID, location: LOCATION });
   const model = vertexAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
   const result = await model.generateContent({
-    contents: [{ role: 'user', parts: [{ fileData: { fileUri: gsUri, mimeType } }, { text: prompt }] }],
+    contents: [{ role: 'user', parts: [{ inlineData: { data: base64, mimeType } }, { text: prompt }] }],
   });
   return result.response.candidates?.[0]?.content?.parts?.[0]?.text || '';
 };
 
-/** Analyze one staged video. Returns null when the model output can't be parsed. */
+/** Analyze one video (inline bytes). Returns null when the model output can't be parsed. */
 export async function analyzeCreativeVideo(
   input: VideoAnalysisInput,
-  gsUri: string,
+  base64: string,
   mimeType: string,
   generate: VideoGenerate = vertexVideoGenerate,
 ): Promise<VideoAnalysis | null> {
-  const raw = await generate(buildVideoAnalysisPrompt(input), gsUri, mimeType);
+  const raw = await generate(buildVideoAnalysisPrompt(input), base64, mimeType);
   return parseVideoAnalysisResponse(raw, input.creativeId);
 }

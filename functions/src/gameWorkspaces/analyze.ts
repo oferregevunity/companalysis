@@ -165,10 +165,7 @@ async function analyzeWorkspaceWinnerVideos(params: {
   creativesByDocId: Map<string, StoredCreative>;
 }): Promise<number> {
   const { insightDocRef, focusAppId, week, creativesByDocId } = params;
-  const [{ getStorage }, { analyzeWinnerVideos }] = await Promise.all([
-    import('firebase-admin/storage'),
-    import('../creativeInsights/videoPipeline'),
-  ]);
+  const { analyzeWinnerVideos } = await import('../creativeInsights/videoPipeline');
 
   const snap = await insightDocRef.get();
   const doc = snap.data() as
@@ -194,11 +191,7 @@ async function analyzeWorkspaceWinnerVideos(params: {
     };
   });
 
-  const { analyses } = await analyzeWinnerVideos(winnerVideos, {
-    bucket: getStorage().bucket(),
-    week,
-    focusAppId,
-  });
+  const { analyses } = await analyzeWinnerVideos(winnerVideos, { week, focusAppId });
 
   if (analyses.length > 0) {
     const { FieldValue } = await import('firebase-admin/firestore');

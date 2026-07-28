@@ -1,6 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
 import { selectWinnerVideos, analyzeWinnerVideos, type WinnerVideoInput } from './videoPipeline';
-import type { StagingBucket } from './videoStaging';
 
 function winner(over: Partial<WinnerVideoInput>): WinnerVideoInput {
   return {
@@ -15,13 +14,11 @@ function winner(over: Partial<WinnerVideoInput>): WinnerVideoInput {
   };
 }
 
-const noopBucket = { name: 'b' } as unknown as StagingBucket;
-
-// A generate that echoes a valid analysis JSON, tagging by creativeId via hookMechanic.
-const okGenerate = vi.fn(async (_prompt: string, gsUri: string) => JSON.stringify({
+// A generate that returns a valid analysis JSON (creativeId is attached downstream).
+const okGenerate = vi.fn(async () => JSON.stringify({
   hookType: 'Gameplay Showcase',
   motivations: ['Action'],
-  hookMechanic: `hook for ${gsUri}`,
+  hookMechanic: 'hook',
   segments: [],
   cta: 'Play',
   predictedHookStrength: 4,
@@ -30,13 +27,7 @@ const okGenerate = vi.fn(async (_prompt: string, gsUri: string) => JSON.stringif
   themes: ['theme'],
 }));
 
-function stubStage() {
-  return vi.fn(async (mediaUrl: string, creativeId: string) => ({
-    gsUri: `gs://b/${creativeId}.mp4`,
-    mimeType: 'video/mp4',
-    objectPath: `tmp/${creativeId}.mp4`,
-  }));
-}
+const stubFetch = () => vi.fn(async () => ({ base64: 'AAA=', mimeType: 'video/mp4', byteLength: 3 }));
 
 describe('selectWinnerVideos', () => {
   it('keeps only videos with media, ordered by rank, capped', () => {
@@ -52,49 +43,43 @@ describe('selectWinnerVideos', () => {
 });
 
 describe('analyzeWinnerVideos', () => {
-  it('stages, analyzes, and cleans up each selected video', async () => {
-    const stage = stubStage();
-    const unstage = vi.fn(async () => {});
+  it('fetches and analyzes each selected video, preserving rank order', async () => {
+    const fetchVideo = stubFetch();
     const res = await analyzeWinnerVideos(
       [winner({ creativeId: 'a__1', rank: 1 }), winner({ creativeId: 'a__2', rank: 2 })],
-      { bucket: noopBucket, week: 'w', stage, unstage, generate: okGenerate },
+      { week: 'w', fetchVideo, generate: okGenerate },
     );
     expect(res.attempted).toBe(2);
     expect(res.failed).toBe(0);
     expect(res.analyses.map(a => a.creativeId)).toEqual(['a__1', 'a__2']);
-    expect(stage).toHaveBeenCalledTimes(2);
-    expect(unstage).toHaveBeenCalledTimes(2); // cleanup always
+    expect(fetchVideo).toHaveBeenCalledTimes(2);
   });
 
   it('skips non-video winners entirely', async () => {
-    const stage = stubStage();
-    const res = await analyzeWinnerVideos([winner({ format: 'image' })], { bucket: noopBucket, week: 'w', stage, unstage: vi.fn(async () => {}), generate: okGenerate });
+    const fetchVideo = stubFetch();
+    const res = await analyzeWinnerVideos([winner({ format: 'image' })], { week: 'w', fetchVideo, generate: okGenerate });
     expect(res.attempted).toBe(0);
-    expect(stage).not.toHaveBeenCalled();
+    expect(fetchVideo).not.toHaveBeenCalled();
   });
 
-  it('counts an unparseable model response as failed but still cleans up', async () => {
-    const stage = stubStage();
-    const unstage = vi.fn(async () => {});
+  it('counts an unparseable model response as failed', async () => {
+    const fetchVideo = stubFetch();
     const badGenerate = vi.fn(async () => 'not json');
-    const res = await analyzeWinnerVideos([winner({ creativeId: 'a__1' })], { bucket: noopBucket, week: 'w', stage, unstage, generate: badGenerate });
+    const res = await analyzeWinnerVideos([winner({ creativeId: 'a__1' })], { week: 'w', fetchVideo, generate: badGenerate });
     expect(res.attempted).toBe(1);
     expect(res.failed).toBe(1);
     expect(res.analyses).toHaveLength(0);
-    expect(unstage).toHaveBeenCalledTimes(1);
   });
 
-  it('treats a staging error as non-fatal', async () => {
-    const stage = vi.fn(async () => { throw new Error('fetch failed'); });
-    const unstage = vi.fn(async () => {});
-    const res = await analyzeWinnerVideos([winner({ creativeId: 'a__1' })], { bucket: noopBucket, week: 'w', stage, unstage, generate: okGenerate });
+  it('treats a download error as non-fatal', async () => {
+    const fetchVideo = vi.fn(async () => { throw new Error('fetch failed'); });
+    const res = await analyzeWinnerVideos([winner({ creativeId: 'a__1' })], { week: 'w', fetchVideo, generate: okGenerate });
     expect(res.failed).toBe(1);
     expect(res.analyses).toHaveLength(0);
-    expect(unstage).not.toHaveBeenCalled(); // nothing staged to clean
   });
 
   it('marks the focus game so the prompt can flag it', async () => {
-    const stage = stubStage();
+    const fetchVideo = stubFetch();
     const seen: string[] = [];
     const generate = vi.fn(async (prompt: string) => {
       seen.push(prompt.includes('FOCUS game') ? 'focus' : 'comp');
@@ -102,7 +87,7 @@ describe('analyzeWinnerVideos', () => {
     });
     await analyzeWinnerVideos(
       [winner({ creativeId: 'f', appId: 'focus', rank: 1 }), winner({ creativeId: 'c', appId: 'comp', rank: 2 })],
-      { bucket: noopBucket, week: 'w', focusAppId: 'focus', concurrency: 1, stage, unstage: vi.fn(async () => {}), generate },
+      { week: 'w', focusAppId: 'focus', concurrency: 1, fetchVideo, generate },
     );
     expect(seen).toEqual(['focus', 'comp']);
   });
