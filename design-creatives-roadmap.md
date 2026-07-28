@@ -1,0 +1,135 @@
+# Creatives — Feature Roadmap
+
+**Date:** 2026-07-28
+**Status:** Planned. #1 in progress.
+**Context:** Builds on the game-workspace flow ([design-game-competitor-analysis.md](design-game-competitor-analysis.md)).
+
+Eight workstreams prioritized with RICE. This doc is the source of truth for
+scope + sequencing; each feature keeps its detail here until it ships.
+
+## Two facts that shaped the plan
+
+1. **Variant grouping is cheap.** Sensor Tower already returns `phashionGroup`
+   (`functions/src/adIntel/types.ts`) as the cross-network dedup key, so #4 is a
+   client-side `groupBy`, not a matching heuristic.
+2. **The video-prompt overhaul and #8 are one engine.** Today
+   `buildCreativePrompt` (`functions/src/creativeInsights/geminiClient.ts`) is
+   **metadata-only** — Gemini never sees the creative; it infers the hook from
+   app name, format, networks, score, and ad copy. Slide 14's rubric requires
+   *watching the video*, so both features sit on a shared "multimodal ingestion"
+   foundation.
+
+**Data caveat baked into all video features:** we do NOT have real Hook Rate /
+Hold Rate / IPM / CPI / ROAS — those are the producer's own UA metrics. Our
+signal is a longevity + network-breadth + SoV proxy (`scoringEngine.ts`). Video
+analysis therefore yields a *predicted / structural* read, labeled as such in
+the UI — never a measured rate.
+
+## RICE snapshot
+
+RICE = (Reach × Impact × Confidence) / Effort. Reach = est. uses/quarter
+(anchored ~200 analysis sessions/qtr — soft; rescale to real usage). Impact
+0.25–3. Effort in person-days.
+
+| # | Feature | Reach | Impact | Conf | Effort | RICE |
+|---|---------|------:|-------:|-----:|-------:|-----:|
+| 1 | Market Pulse label fix | 100 | 1 | 90% | 1 | 90 |
+| 2 | Competitor new-winner alerts | 150 | 2 | 70% | 6 | 35 |
+| 3 | AI Concept Generator | 120 | 3 | 70% | 8 | 31 |
+| 4 | Variant grouping (via phashionGroup) | 200 | 1 | 70% | 3 | 47 |
+| 5 | Side-by-side compare | 60 | 2 | 70% | 5 | 17 |
+| 6 | Week-over-week trend | 80 | 2 | 60% | 7 | 14 |
+| 8 | Frame-level hook breakdown | 80 | 2 | 60% | 3* | 32* |
+| — | Video foundation + slide-14 overhaul | — | 3 | 60% | 8 | — |
+
+\* #8 effort/confidence assume the video foundation already exists.
+
+## Build sequence
+
+`#1` → `video foundation + overhaul` → `#8` → `#3` → `#2` → `#4` → `#5` → `#6`.
+
+Rationale: #1 is a near-free quick win; the video foundation is the stated
+priority and enriches `CreativeTag`, which #3/#5/#6 all consume; #8 is the
+on-demand surface of the same engine. #2's placement depends on the delivery
+channel decision below.
+
+---
+
+## Shared foundation — multimodal video ingestion
+
+For each creative to deep-analyze: download `mediaUrl` → stage to a temp GCS
+bucket → pass to Gemini as `fileData` (`gs://`) → delete after. Vertex cannot
+fetch Sensor Tower's external HTTP `mediaUrl` directly. Cap/sample (~60s;
+Gemini samples ~1 fps) to bound cost. **Tier it (DECIDED):** the batch job video-
+analyzes only the **top 10 ranked winners shown in the UI** (video format; the
+`rank <= 10` set in `rankMap`) per workspace-week; everything else stays
+metadata-tagged. Deep per-video (#8) is on-demand in the detail modal.
+
+## Video-analysis overhaul (slide 14 → the prompt)
+
+Rewrite `buildCreativePrompt` around the **Iteration Loop** anatomy + the
+**game-motivations** taxonomy (deck slide 4). New per-creative structured output:
+
+- **Segments** — `attention (0–3/5s)`: opening + hook mechanic + attention
+  strength (1–5); `content (10–15s)`: mechanics, visual/animation/color notes,
+  pacing, hold-risk; `end (2–5s)`: end twist, CTA, store logo, motivation closure.
+- **Hook type** — existing 11-label taxonomy, now grounded in the video.
+- **Motivations** — 1–3 from: Action, Achievement, Mastery, Social, Creativity,
+  Destruction, Completion, Challenge, Competition, Design, Excitement, Power,
+  Strategy, Collaboration, Discovery.
+- **Iterable elements present** — slide checklist (hand pointer, captions, zoom,
+  UGC, VO, end twist, store logo, …) → feeds concept/iteration briefs (#3).
+- **Predicted hook / hold strength** (1–5, explicitly a prediction).
+
+Extends `CreativeTag` (adds segments + motivations + iterableElements), the
+detail modal, and the filter rail (filter by motivation / element).
+
+---
+
+## Feature detail
+
+### #1 — Market Pulse label fix (IN PROGRESS)
+`parseMarketPulseResponse` matches Gemini's echoed `label` exactly against cluster
+labels; the echo never matches, so every rising concept falls back to its raw
+label with an empty description (`WeeksReadBand` rising card + `MarketPulsePanel`).
+**Fix:** number clusters in the prompt and have Gemini return the array `index`;
+match by index, keep case-insensitive label as fallback. Add `geminiClient.test.ts`.
+
+### #8 — Frame-level hook breakdown
+On-demand "Deep-analyze this video" in `CreativeDetailModal` → renders the segment
+timeline from the shared engine. Small once the foundation exists.
+
+### #3 — AI Creative Concept Generator
+"Make 3 concepts" → Gemini takes winning hooks/motivations/iterable-elements +
+the focus game's gaps + focus-game metadata → a structured concept mapped onto
+the deck's **Video Brief** template (Concept+Motivation / Hook / Visual style /
+Intro-Gameplay-End / Length / References). Extends `frontend/src/lib/creativeBrief.ts`.
+
+### #2 — Competitor new-winner alerts
+Diff the weekly-refresh output per workspace; a new creative crossing the winner
+threshold → digest. **OPEN DECISION: delivery channel.** No email/Slack infra
+exists; simplest is piggybacking the morning-briefing flow. Effort hinges on this.
+
+### #4 — Creative variant grouping
+Client-side `groupBy(phashionGroup)`; one tile + network/country/variant badges.
+Declutters the gallery and makes SoV/longevity honest.
+
+### #5 — Side-by-side compare
+Select 2 tiles → diff panel (hook / segments / motivations / why-it-wins);
+"my game vs winning pattern" preset. Best after the overhaul (richer fields).
+
+### #6 — Per-workspace week-over-week trend
+Aggregate accumulated weekly insight docs for the competitor set: hook/motivation
+share over time + creative-fatigue (weeks-live). Needs ≥2–3 weeks of history.
+
+## Open decisions
+
+- **Alerts delivery channel** (#2): email vs Slack vs morning-briefing piggyback.
+- **Slide reference:** "slide 14" read as deck section **#7 Iteration Loop**
+  (cover + dividers counted). Confirm if the deck numbers differently.
+
+## Resolved decisions
+
+- **Video-analysis tier (2026-07-28):** batch job analyzes the top 10 ranked
+  winners shown in the UI (video format), per workspace-week.
+- **Delivery process:** features built one at a time, committed individually.
