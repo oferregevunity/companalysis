@@ -1,8 +1,23 @@
 # Creatives — Feature Roadmap
 
 **Date:** 2026-07-28
-**Status:** Planned. #1 in progress.
+**Status:** In progress. **Shipped + deployed 2026-07-28:** #1, the video
+foundation + slide-14 overhaul, and #8. **Next:** #3 (concept generator).
 **Context:** Builds on the game-workspace flow ([design-game-competitor-analysis.md](design-game-competitor-analysis.md)).
+
+## Progress
+
+- [x] Roadmap doc
+- [x] **#1 Market Pulse label fix** — deployed
+- [x] **Video foundation + slide-14 overhaul** — inline-to-Vertex, top-10 videos
+  by score; deployed; verified in prod
+- [x] **#8 On-demand per-creative video analysis** — "Analyze this video" in the
+  detail modal; deployed (`compAnalysisApi` + hosting)
+- [ ] #3 AI Concept Generator (next — grounded in deck slide 15 Ideation Strategy)
+- [ ] #2 Competitor new-winner alerts (blocked on delivery-channel decision)
+- [ ] #4 Variant grouping
+- [ ] #5 Side-by-side compare
+- [ ] #6 Week-over-week trend
 
 Eight workstreams prioritized with RICE. This doc is the source of truth for
 scope + sequencing; each feature keeps its detail here until it ships.
