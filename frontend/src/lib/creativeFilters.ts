@@ -43,7 +43,7 @@ export function defaultFilters(): Filters {
     newThisWeek: false,
     winnersOnly: false,
     hideOwnGame: false,
-    sort: 'score',
+    sort: 'sov',
     search: '',
   };
 }
