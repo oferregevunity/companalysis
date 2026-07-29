@@ -2,6 +2,7 @@ import { useState } from 'react';
 import type { JoinedCreative } from '../../hooks/useCreativesForGenre';
 import type { CreativeFormat, CreativeTag } from '../../types/creatives';
 import type { AppNameMapEntry } from '../../hooks/useAppNames';
+import type { VariantMeta } from '../../lib/creativeVariants';
 
 const PLACEHOLDER_SVG =
   'data:image/svg+xml,' +
@@ -36,11 +37,14 @@ export interface CreativeTileProps {
   appEntry?: AppNameMapEntry;
   tag?: CreativeTag;
   isOwn?: boolean;
+  /** Present when this tile represents a collapsed variant group (count > 1). */
+  variant?: VariantMeta;
   onOpen: (docId: string) => void;
 }
 
-export function CreativeTile({ creative, rankBadge, appEntry, tag, isOwn, onOpen }: CreativeTileProps) {
+export function CreativeTile({ creative, rankBadge, appEntry, tag, isOwn, variant, onOpen }: CreativeTileProps) {
   const displayName = appEntry?.name ?? creative.appId;
+  const otherGames = variant ? variant.games.length - 1 : 0;
 
   // Chrome caps WebMediaPlayer instances per tab (~75). Render the poster by
   // default and only swap to <video> while hovered/focused so at most a handful
@@ -139,6 +143,18 @@ export function CreativeTile({ creative, rankBadge, appEntry, tag, isOwn, onOpen
         <span className="absolute bottom-2 left-2 rounded-[5px] bg-[rgba(22,23,31,0.7)] px-1.5 py-px text-[10px] text-white">
           {pillLabel(creative)}
         </span>
+        {variant && variant.count > 1 && (
+          <span
+            className="absolute bottom-2 right-2 inline-flex items-center gap-0.5 rounded-[5px] bg-[rgba(22,23,31,0.7)] px-1.5 py-px text-[10px] font-medium text-white"
+            title={`Same creative across ${variant.count} placements${otherGames > 0 ? ` and ${variant.games.length} games` : ''} — stats aggregated`}
+          >
+            <svg viewBox="0 0 24 24" className="h-2.5 w-2.5 fill-current" aria-hidden>
+              <path d="M4 8h12v12H4z" opacity=".5" />
+              <path d="M8 4h12v12H8z" />
+            </svg>
+            ×{variant.count}
+          </span>
+        )}
       </div>
 
       <div className="flex flex-col gap-1.5 px-3 pb-3 pt-[11px]">
@@ -151,6 +167,7 @@ export function CreativeTile({ creative, rankBadge, appEntry, tag, isOwn, onOpen
           <span className="min-w-0 truncate text-xs font-medium text-ink">
             {displayName}
             {isOwn && <span className="text-accent-text"> · yours</span>}
+            {otherGames > 0 && <span className="text-ink-muted"> +{otherGames} game{otherGames === 1 ? '' : 's'}</span>}
           </span>
         </div>
         {hookTheme && <p className="truncate text-xs text-ink-2">{hookTheme}</p>}

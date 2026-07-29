@@ -1,6 +1,7 @@
 import type { JoinedCreative } from '../../hooks/useCreativesForGenre';
 import type { AppNameMapEntry } from '../../hooks/useAppNames';
 import type { CreativeTag } from '../../types/creatives';
+import type { VariantMeta } from '../../lib/creativeVariants';
 import { CreativeTile } from './CreativeTile';
 
 export interface CreativeGalleryProps {
@@ -8,6 +9,8 @@ export interface CreativeGalleryProps {
   rankMap: Map<string, number>;
   appNames: Map<string, AppNameMapEntry>;
   tagMap?: Map<string, CreativeTag>;
+  /** Variant-group metadata keyed by docId (see groupVariants); empty when grouping is off. */
+  variantMeta?: Map<string, VariantMeta>;
   focusAppId: string;
   onOpen: (docId: string) => void;
 }
@@ -17,6 +20,7 @@ export function CreativeGallery({
   rankMap,
   appNames,
   tagMap,
+  variantMeta,
   focusAppId,
   onOpen,
 }: CreativeGalleryProps) {
@@ -30,6 +34,7 @@ export function CreativeGallery({
           appEntry={appNames.get(c.appId)}
           tag={tagMap?.get(c.docId)}
           isOwn={c.appId === focusAppId}
+          variant={variantMeta?.get(c.docId)}
           onOpen={onOpen}
         />
       ))}

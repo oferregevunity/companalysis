@@ -28,6 +28,7 @@ import {
   type Filters,
 } from '../lib/creativeFilters';
 import { computeCreativeGaps, isCreativeInGap, type CreativeGaps } from '../lib/creativeGaps';
+import { groupVariants, NO_VARIANTS } from '../lib/creativeVariants';
 import { useAppNames, type AppNameMapEntry } from '../hooks/useAppNames';
 import type { CreativeTag, QueryableAdNetwork, RisingConcept } from '../types/creatives';
 import type { JoinedCreative } from '../hooks/useCreativesForGenre';
@@ -234,6 +235,7 @@ export default function Creatives() {
   const [activeTab, setActiveTab] = useState<GalleryTab>('all');
   const [editSetOpen, setEditSetOpen] = useState(false);
   const [conceptsOpen, setConceptsOpen] = useState(false);
+  const [groupVariantsOn, setGroupVariantsOn] = useState(true);
   const pageRef = useRef<HTMLDivElement>(null);
 
   const latestWeek = useMemo(() => getLatestCreativeWeek(), []);
@@ -499,6 +501,13 @@ export default function Creatives() {
     () => applyTab(filteredCreatives, activeTab, gaps, focusAppId),
     [filteredCreatives, activeTab, gaps, focusAppId],
   );
+
+  // Collapse same-concept creatives (shared phashionGroup across apps) into one
+  // representative tile with aggregated SoV/longevity. Pure display transform on
+  // the already-filtered gallery list; analysis aggregations stay on the raw set.
+  const variantView = useMemo(() => groupVariants(galleryCreatives), [galleryCreatives]);
+  const displayCreatives = groupVariantsOn ? variantView.representatives : galleryCreatives;
+  const variantMeta = groupVariantsOn ? variantView.meta : NO_VARIANTS;
 
   // Rail aggregation (stable, over the pre-tag-filter list).
   const railAgg = useMemo(() => aggregateHooksThemes(baseFilteredCreatives, tagMap), [baseFilteredCreatives, tagMap]);
@@ -795,6 +804,8 @@ export default function Creatives() {
                 aiChips={aiChips}
                 sort={filters.sort}
                 onSortChange={(sort) => setFilters((p) => ({ ...p, sort }))}
+                groupVariants={groupVariantsOn}
+                onToggleGroupVariants={setGroupVariantsOn}
               />
               {galleryCreatives.length === 0 ? (
                 <CreativeEmptyState
@@ -803,14 +814,23 @@ export default function Creatives() {
                   onClearAll={() => { setFilters(defaultFilters()); setActiveTab('all'); }}
                 />
               ) : (
-                <CreativeGallery
-                  creatives={galleryCreatives}
-                  rankMap={rankMap}
-                  appNames={appNames}
-                  tagMap={tagMap}
-                  focusAppId={focusAppId}
-                  onOpen={setDetailDocId}
-                />
+                <>
+                  {groupVariantsOn && variantView.collapsed > 0 && (
+                    <p className="pt-3 text-[11px] text-ink-muted">
+                      Showing {displayCreatives.length} concept{displayCreatives.length === 1 ? '' : 's'} · {variantView.collapsed} variant
+                      {variantView.collapsed === 1 ? '' : 's'} grouped by matching creative
+                    </p>
+                  )}
+                  <CreativeGallery
+                    creatives={displayCreatives}
+                    rankMap={rankMap}
+                    appNames={appNames}
+                    tagMap={tagMap}
+                    variantMeta={variantMeta}
+                    focusAppId={focusAppId}
+                    onOpen={setDetailDocId}
+                  />
+                </>
               )}
             </div>
           </div>

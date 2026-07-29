@@ -31,9 +31,20 @@ export interface GalleryTabsProps {
   aiChips: AiChip[];
   sort: Filters['sort'];
   onSortChange: (sort: Filters['sort']) => void;
+  groupVariants: boolean;
+  onToggleGroupVariants: (next: boolean) => void;
 }
 
-export function GalleryTabs({ activeTab, counts, onSelect, aiChips, sort, onSortChange }: GalleryTabsProps) {
+export function GalleryTabs({
+  activeTab,
+  counts,
+  onSelect,
+  aiChips,
+  sort,
+  onSortChange,
+  groupVariants,
+  onToggleGroupVariants,
+}: GalleryTabsProps) {
   return (
     <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line pb-2.5">
       <div className="flex items-center gap-[18px]">
@@ -54,7 +65,16 @@ export function GalleryTabs({ activeTab, counts, onSelect, aiChips, sort, onSort
         })}
       </div>
 
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-3">
+        <label className="flex cursor-pointer items-center gap-1.5 text-xs text-ink-muted" title="Collapse the same creative run across multiple games into one tile">
+          <input
+            type="checkbox"
+            checked={groupVariants}
+            onChange={(e) => onToggleGroupVariants(e.target.checked)}
+            className="h-3.5 w-3.5 rounded border-line text-accent focus:ring-accent"
+          />
+          Group variants
+        </label>
         {aiChips.map((chip) => (
           <button
             key={chip.key}
