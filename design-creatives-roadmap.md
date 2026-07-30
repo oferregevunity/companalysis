@@ -233,6 +233,10 @@ no dismissal that discovery respects.
 (and so a re-added competitor isn't silently dropped forever). Small, client-side
 + one workspace field. Effort ~0.5–1 day.
 
+Follow-up shipped: a **"✨ Suggest more"** action in the Edit-set drawer re-runs
+AI discovery and APPENDS only new picks (keeps the curated set; skips present +
+dismissed). Removal itself stays the hover-✕ on each card in that drawer.
+
 ## Open decisions
 
 - **Alerts delivery channel** (#2): email vs Slack vs morning-briefing piggyback.
