@@ -4,10 +4,10 @@
 **Status:** In progress. **Shipped + deployed 2026-07-28:** #1, the video
 foundation + slide-14 overhaul, #8, **#3** (concept generator), **#4** (variant
 grouping) + SoV-default sort, **#5** (side-by-side compare), and the
-video-analysis failure diagnostics + 14.5 MB cap. **Built, awaiting deploy:**
-dismiss suggested competitors. **Remaining:** #6 (week-over-week trend — needs
-history), #2 (new-winner alerts — blocked on delivery channel), and the scoped
-GCS `fileData` v2 for oversize videos. **Next:** #6.
+video-analysis failure diagnostics + 14.5 MB cap, and dismiss suggested
+competitors. **Remaining:** #6 (week-over-week trend — needs history), #2
+(new-winner alerts — blocked on delivery channel), and the scoped GCS
+`fileData` v2 for oversize videos. **Next:** #6.
 **Context:** Builds on the game-workspace flow ([design-game-competitor-analysis.md](design-game-competitor-analysis.md)).
 
 ## Progress
@@ -34,7 +34,7 @@ GCS `fileData` v2 for oversize videos. **Next:** #6.
 - [ ] #6 Week-over-week trend
 - [x] **Dismiss suggested competitors** — per-workspace `dismissedAppIds`
   blocklist; removing a competitor now sticks (AI re-discovery skips it),
-  re-adding un-dismisses, "N hidden · Restore" in the rail. Built, not deployed.
+  re-adding un-dismisses, "N hidden · Restore" in the rail. Deployed 2026-07-28.
 - [ ] **Video foundation v2 — GCS `fileData` for oversize videos** (scoped below)
 
 Eight workstreams prioritized with RICE. This doc is the source of truth for
@@ -202,7 +202,7 @@ Select 2 tiles → diff panel (hook / segments / motivations / why-it-wins);
 Aggregate accumulated weekly insight docs for the competitor set: hook/motivation
 share over time + creative-fatigue (weeks-live). Needs ≥2–3 weeks of history.
 
-### Dismiss suggested competitors (BUILT — awaiting deploy)
+### Dismiss suggested competitors (SHIPPED)
 
 Removing a competitor already works (the ✕ in `CompetitorRail` → `removeCompetitor`
 in `Creatives.tsx`, persisted to the workspace doc). The gap: `runDiscovery` does
