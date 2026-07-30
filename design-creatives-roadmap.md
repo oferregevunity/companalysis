@@ -5,9 +5,10 @@
 foundation + slide-14 overhaul, #8, **#3** (concept generator), **#4** (variant
 grouping) + SoV-default sort, **#5** (side-by-side compare), and the
 video-analysis failure diagnostics + 14.5 MB cap, and dismiss suggested
-competitors. **Remaining:** #6 (week-over-week trend — needs history), #2
-(new-winner alerts — blocked on delivery channel), and the scoped GCS
-`fileData` v2 for oversize videos. **Next:** #6.
+competitors. **Built, awaiting deploy:** #6 (week-over-week trend). **Remaining:**
+#2 (new-winner alerts — blocked on delivery channel), and the scoped GCS
+`fileData` v2 for oversize videos. **Next:** #2 (pending delivery-channel
+decision) or GCS `fileData` v2.
 **Context:** Builds on the game-workspace flow ([design-game-competitor-analysis.md](design-game-competitor-analysis.md)).
 
 ## Progress
@@ -31,7 +32,14 @@ competitors. **Remaining:** #6 (week-over-week trend — needs history), #2
 - [x] **#5 Side-by-side compare** — "Compare" mode → pick 2 tiles → diff modal
   (stats / hook / themes / motivations / why-it-wins / video segments + predicted
   strengths), plus a "my best vs their best" preset. Deployed 2026-07-28.
-- [ ] #6 Week-over-week trend
+- [x] **#6 Week-over-week trend** — dedicated Trends modal (header entry point).
+  Client-side `buildCompositionTrend` (hook/motivation share across accumulated
+  weekly insight docs + WoW deltas + top movers) via `useWorkspaceTrend`
+  (reuses the `genreId + generatedAt` index, no new index), plus `buildFatigue`
+  (weeks-live from `durationDays`, variant-collapsed, winners-first) off the
+  current week — so the fatigue read works today and composition fills in as
+  history accrues (degrades to a "N week(s) so far" note below 2 weeks). Built
+  2026-07-30, awaiting deploy.
 - [x] **Dismiss suggested competitors** — per-workspace `dismissedAppIds`
   blocklist; removing a competitor now sticks (AI re-discovery skips it),
   re-adding un-dismisses, "N hidden · Restore" in the rail. Deployed 2026-07-28.
@@ -198,9 +206,18 @@ Declutters the gallery and makes SoV/longevity honest.
 Select 2 tiles → diff panel (hook / segments / motivations / why-it-wins);
 "my game vs winning pattern" preset. Best after the overhaul (richer fields).
 
-### #6 — Per-workspace week-over-week trend
-Aggregate accumulated weekly insight docs for the competitor set: hook/motivation
-share over time + creative-fatigue (weeks-live). Needs ≥2–3 weeks of history.
+### #6 — Per-workspace week-over-week trend (BUILT — awaiting deploy)
+Dedicated **Trends modal** off a header button. `useWorkspaceTrend(scopeId)` reads
+the accumulated weekly insight docs (`creativeInsights` where `genreId == scopeId`,
+newest-first — reuses the existing `genreId + generatedAt` index). `buildCompositionTrend`
+turns them into per-hook and per-motivation share-over-time series with WoW deltas
++ top movers; `buildFatigue` reads the current week's creatives for weeks-live
+(from `durationDays`, variant-collapsed, winners-first). Fatigue works off one
+analyzed week; composition needs ≥2 weeks and degrades to a "N week(s) so far"
+note until history accrues. All pure logic in `frontend/src/lib/creativeTrend.ts`.
+Labeled a structural read (no measured rates). Verified: `tsc` + eslint clean,
+Vite transform of all modules, and 20 synthetic-data assertions on the pure
+aggregation (frontend has no test runner, so no committed unit test).
 
 ### Dismiss suggested competitors (SHIPPED)
 

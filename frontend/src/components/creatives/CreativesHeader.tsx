@@ -21,6 +21,7 @@ export interface CreativesHeaderProps {
   onRefresh: () => void;
   onReanalyze: () => void;
   onGenerateConcepts: () => void;
+  onTrends: () => void;
   onEditSet: () => void;
   onChangeGame: () => void;
 }
@@ -55,6 +56,7 @@ export function CreativesHeader({
   onRefresh,
   onReanalyze,
   onGenerateConcepts,
+  onTrends,
   onEditSet,
   onChangeGame,
 }: CreativesHeaderProps) {
@@ -132,6 +134,14 @@ export function CreativesHeader({
             className="rounded-lg border border-line bg-surface px-3 py-[5px] text-xs font-medium text-ink-2 hover:bg-[#faf9fe] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
           >
             ✨ Concepts
+          </button>
+          <button
+            type="button"
+            onClick={onTrends}
+            title="Week-over-week hook/motivation mix and creative fatigue"
+            className="rounded-lg border border-line bg-surface px-3 py-[5px] text-xs font-medium text-ink-2 hover:bg-[#faf9fe] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+          >
+            📈 Trends
           </button>
           <button
             type="button"

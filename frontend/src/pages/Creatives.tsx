@@ -21,6 +21,8 @@ import { CreativeEmptyState, type ActiveFilterDesc, type RecoveryAction } from '
 import { CreativeDetailModal } from '../components/creatives/CreativeDetailModal';
 import { ConceptGeneratorModal } from '../components/creatives/ConceptGeneratorModal';
 import { CreativeCompareModal } from '../components/creatives/CreativeCompareModal';
+import { WorkspaceTrendModal } from '../components/creatives/WorkspaceTrendModal';
+import { useWorkspaceTrend } from '../hooks/useWorkspaceTrend';
 import { buildCompareItem } from '../lib/creativeCompare';
 import { durationBucket } from '../lib/creativeBuckets';
 import {
@@ -237,6 +239,7 @@ export default function Creatives() {
   const [activeTab, setActiveTab] = useState<GalleryTab>('all');
   const [editSetOpen, setEditSetOpen] = useState(false);
   const [conceptsOpen, setConceptsOpen] = useState(false);
+  const [trendsOpen, setTrendsOpen] = useState(false);
   const [groupVariantsOn, setGroupVariantsOn] = useState(true);
   const [compareMode, setCompareMode] = useState(false);
   const [compareIds, setCompareIds] = useState<string[]>([]);
@@ -377,6 +380,8 @@ export default function Creatives() {
   const { run, start } = useWorkspaceAnalysis(latestWeek);
   const running = run.phase === 'fetching' || run.phase === 'analyzing';
   const { data: pulse } = useMarketPulse();
+  // Week-over-week trend history — fetched lazily, only while the Trends modal is open.
+  const { weekDocs: trendWeekDocs, loading: trendLoading } = useWorkspaceTrend(scopeId, trendsOpen);
 
   const startAnalysis = useCallback(
     (force: boolean) => {
@@ -853,6 +858,7 @@ export default function Creatives() {
         onRefresh={refreshCreatives}
         onReanalyze={() => startAnalysis(true)}
         onGenerateConcepts={() => setConceptsOpen(true)}
+        onTrends={() => setTrendsOpen(true)}
         onEditSet={() => setEditSetOpen(true)}
         onChangeGame={clearFocusApp}
       />
@@ -1022,6 +1028,17 @@ export default function Creatives() {
         onClose={() => setCompareOpen(false)}
         a={compareItems[0] ?? null}
         b={compareItems[1] ?? null}
+      />
+
+      <WorkspaceTrendModal
+        open={trendsOpen}
+        onClose={() => setTrendsOpen(false)}
+        focusGameName={focusApp.name}
+        focusAppId={focusAppId}
+        weekDocs={trendWeekDocs}
+        loading={trendLoading}
+        current={joinedCreatives}
+        appNames={appNames}
       />
     </div>
   );
