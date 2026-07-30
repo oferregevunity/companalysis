@@ -23,7 +23,7 @@ deployed 2026-07-28). **Next:** #2 (competitor new-winner alerts).
 - [ ] #2 Competitor new-winner alerts (blocked on delivery-channel decision)
 - [x] **#4 Variant grouping** — client-side `groupVariants(phashionGroup)`; one
   representative tile with aggregated SoV/longevity + "×N / +N games" badge;
-  default-on "Group variants" toggle. Built, not yet deployed.
+  default-on "Group variants" toggle. Deployed 2026-07-28 (with SoV-default sort).
 - [ ] #5 Side-by-side compare
 - [ ] #6 Week-over-week trend
 - [ ] **Video foundation v2 — GCS `fileData` for oversize videos** (scoped below)
