@@ -4,8 +4,8 @@
 **Status:** In progress. **Shipped + deployed 2026-07-28:** #1, the video
 foundation + slide-14 overhaul, #8, **#3** (concept generator), **#4** (variant
 grouping) + SoV-default sort, **#5** (side-by-side compare), and the
-video-analysis failure diagnostics + 14.5 MB cap, and dismiss suggested
-competitors. **Built, awaiting deploy:** #6 (week-over-week trend). **Remaining:**
+video-analysis failure diagnostics + 14.5 MB cap, dismiss suggested competitors
+(+ "Suggest more"), and **#6** (week-over-week trend). **Remaining:**
 #2 (new-winner alerts — blocked on delivery channel), and the scoped GCS
 `fileData` v2 for oversize videos. **Next:** #2 (pending delivery-channel
 decision) or GCS `fileData` v2.
@@ -206,7 +206,7 @@ Declutters the gallery and makes SoV/longevity honest.
 Select 2 tiles → diff panel (hook / segments / motivations / why-it-wins);
 "my game vs winning pattern" preset. Best after the overhaul (richer fields).
 
-### #6 — Per-workspace week-over-week trend (BUILT — awaiting deploy)
+### #6 — Per-workspace week-over-week trend (SHIPPED)
 Dedicated **Trends modal** off a header button. `useWorkspaceTrend(scopeId)` reads
 the accumulated weekly insight docs (`creativeInsights` where `genreId == scopeId`,
 newest-first — reuses the existing `genreId + generatedAt` index). `buildCompositionTrend`
