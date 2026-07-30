@@ -26,7 +26,7 @@ deployed 2026-07-28). **Next:** #2 (competitor new-winner alerts).
   default-on "Group variants" toggle. Deployed 2026-07-28 (with SoV-default sort).
 - [x] **#5 Side-by-side compare** — "Compare" mode → pick 2 tiles → diff modal
   (stats / hook / themes / motivations / why-it-wins / video segments + predicted
-  strengths), plus a "my best vs their best" preset. Built, not yet deployed.
+  strengths), plus a "my best vs their best" preset. Deployed 2026-07-28.
 - [ ] #6 Week-over-week trend
 - [ ] **Dismiss suggested competitors** (backlog — see detail below)
 - [ ] **Video foundation v2 — GCS `fileData` for oversize videos** (scoped below)
