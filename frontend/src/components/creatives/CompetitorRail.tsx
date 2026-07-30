@@ -23,6 +23,11 @@ export interface CompetitorRailProps {
   /** How many suggested competitors the user has dismissed (hidden from AI re-discovery). */
   dismissedCount: number;
   onRestoreDismissed: () => void;
+  /** Re-run AI discovery and append only new suggestions (keeps the current set). */
+  onFindMore: () => void;
+  finding: boolean;
+  /** Transient result note from the last "suggest more" run. */
+  moreNote: string | null;
   onShowAllCreatives: () => void;
   onAddCompetitor: (game: SearchedGame) => void;
   onCountryChange: (country: string) => void;
@@ -259,6 +264,9 @@ export function CompetitorRail({
   onRemoveCompetitor,
   dismissedCount,
   onRestoreDismissed,
+  onFindMore,
+  finding,
+  moreNote,
   onShowAllCreatives,
   onAddCompetitor,
   onCountryChange,
@@ -388,6 +396,23 @@ export function CompetitorRail({
             />
           ))}
           {!running && <AddCompetitorCard onAdd={onAddCompetitor} excludeIds={allIds} />}
+          {!running && (
+            <div className="flex items-center gap-2 pt-1">
+              <button
+                type="button"
+                onClick={onFindMore}
+                disabled={finding}
+                title="Ask the AI for more competitors (keeps your current set; skips removed ones)"
+                className="inline-flex items-center gap-1.5 rounded-md border border-blue-300 bg-white px-2.5 py-1 text-xs font-medium text-blue-700 hover:bg-blue-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 disabled:opacity-50"
+              >
+                {finding && (
+                  <span className="h-3 w-3 shrink-0 animate-spin rounded-full border-2 border-blue-200 border-t-blue-600" />
+                )}
+                {finding ? 'Finding…' : '✨ Suggest more'}
+              </button>
+              {moreNote && <span className="text-[11px] text-gray-500">{moreNote}</span>}
+            </div>
+          )}
           {dismissedCount > 0 && (
             <p className="pt-1 text-[11px] text-gray-400">
               {dismissedCount} suggestion{dismissedCount === 1 ? '' : 's'} hidden from AI discovery ·{' '}

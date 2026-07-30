@@ -463,6 +463,39 @@ export default function Creatives() {
 
   const restoreDismissed = useCallback(() => setDismissedIds(new Set()), []);
 
+  // Re-run AI discovery and APPEND only genuinely new suggestions — keeps the
+  // curated set intact and skips anything already present or dismissed (so
+  // removed competitors don't sneak back in). Non-destructive "suggest more".
+  const [findingMore, setFindingMore] = useState(false);
+  const [moreNote, setMoreNote] = useState<string | null>(null);
+  const findMoreCompetitors = useCallback(() => {
+    if (!focusApp || findingMore) return;
+    setFindingMore(true);
+    setMoreNote(null);
+    void (async () => {
+      try {
+        const { competitors: all } = await discoverCompetitors(focusApp, country);
+        const have = new Set(competitors.map((c) => c.appId));
+        const fresh = all.filter(
+          (c) => c.appId !== focusApp.appId && !have.has(c.appId) && !dismissedIds.has(c.appId),
+        );
+        if (fresh.length > 0) {
+          setCompetitors((prev) => [...prev, ...fresh]);
+          setSelectedIds((prev) => {
+            const n = new Set(prev);
+            for (const c of fresh) n.add(c.appId);
+            return n;
+          });
+        }
+        setMoreNote(fresh.length > 0 ? `Added ${fresh.length} new suggestion${fresh.length === 1 ? '' : 's'}` : 'No new suggestions right now.');
+      } catch (err) {
+        setMoreNote(err instanceof Error ? err.message : 'Could not fetch suggestions.');
+      } finally {
+        setFindingMore(false);
+      }
+    })();
+  }, [focusApp, country, competitors, dismissedIds, findingMore]);
+
   const rankMap = useMemo(() => {
     const m = new Map<string, number>();
     if (!insightDoc?.winners) return m;
@@ -792,6 +825,9 @@ export default function Creatives() {
     onRemoveCompetitor: removeCompetitor,
     dismissedCount: dismissedIds.size,
     onRestoreDismissed: restoreDismissed,
+    finding: findingMore,
+    moreNote,
+    onFindMore: findMoreCompetitors,
     onShowAllCreatives: () => setFilters((p) => ({ ...p, appIds: new Set<string>() })),
     onAddCompetitor: addCompetitor,
     onCountryChange: setCountry,
