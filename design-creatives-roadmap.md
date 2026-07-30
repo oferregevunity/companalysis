@@ -2,8 +2,12 @@
 
 **Date:** 2026-07-28
 **Status:** In progress. **Shipped + deployed 2026-07-28:** #1, the video
-foundation + slide-14 overhaul, #8, and **#3 concept generator** (both slices,
-deployed 2026-07-28). **Next:** #2 (competitor new-winner alerts).
+foundation + slide-14 overhaul, #8, **#3** (concept generator), **#4** (variant
+grouping) + SoV-default sort, **#5** (side-by-side compare), and the
+video-analysis failure diagnostics + 14.5 MB cap. **Built, awaiting deploy:**
+dismiss suggested competitors. **Remaining:** #6 (week-over-week trend — needs
+history), #2 (new-winner alerts — blocked on delivery channel), and the scoped
+GCS `fileData` v2 for oversize videos. **Next:** #6.
 **Context:** Builds on the game-workspace flow ([design-game-competitor-analysis.md](design-game-competitor-analysis.md)).
 
 ## Progress
@@ -164,18 +168,18 @@ doc still writes.
 
 ## Feature detail
 
-### #1 — Market Pulse label fix (IN PROGRESS)
+### #1 — Market Pulse label fix (SHIPPED)
 `parseMarketPulseResponse` matches Gemini's echoed `label` exactly against cluster
 labels; the echo never matches, so every rising concept falls back to its raw
 label with an empty description (`WeeksReadBand` rising card + `MarketPulsePanel`).
 **Fix:** number clusters in the prompt and have Gemini return the array `index`;
 match by index, keep case-insensitive label as fallback. Add `geminiClient.test.ts`.
 
-### #8 — Frame-level hook breakdown
+### #8 — Frame-level hook breakdown (SHIPPED)
 On-demand "Deep-analyze this video" in `CreativeDetailModal` → renders the segment
 timeline from the shared engine. Small once the foundation exists.
 
-### #3 — AI Creative Concept Generator
+### #3 — AI Creative Concept Generator (SHIPPED)
 "Make 3 concepts" → Gemini takes winning hooks/motivations/iterable-elements +
 the focus game's gaps + focus-game metadata → a structured concept mapped onto
 the deck's **Video Brief** template (Concept+Motivation / Hook / Visual style /
@@ -186,11 +190,11 @@ Diff the weekly-refresh output per workspace; a new creative crossing the winner
 threshold → digest. **OPEN DECISION: delivery channel.** No email/Slack infra
 exists; simplest is piggybacking the morning-briefing flow. Effort hinges on this.
 
-### #4 — Creative variant grouping
+### #4 — Creative variant grouping (SHIPPED)
 Client-side `groupBy(phashionGroup)`; one tile + network/country/variant badges.
 Declutters the gallery and makes SoV/longevity honest.
 
-### #5 — Side-by-side compare
+### #5 — Side-by-side compare (SHIPPED)
 Select 2 tiles → diff panel (hook / segments / motivations / why-it-wins);
 "my game vs winning pattern" preset. Best after the overhaul (richer fields).
 
@@ -198,7 +202,7 @@ Select 2 tiles → diff panel (hook / segments / motivations / why-it-wins);
 Aggregate accumulated weekly insight docs for the competitor set: hook/motivation
 share over time + creative-fatigue (weeks-live). Needs ≥2–3 weeks of history.
 
-### Dismiss suggested competitors (backlog)
+### Dismiss suggested competitors (BUILT — awaiting deploy)
 
 Removing a competitor already works (the ✕ in `CompetitorRail` → `removeCompetitor`
 in `Creatives.tsx`, persisted to the workspace doc). The gap: `runDiscovery` does
