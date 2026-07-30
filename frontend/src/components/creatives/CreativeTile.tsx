@@ -39,12 +39,28 @@ export interface CreativeTileProps {
   isOwn?: boolean;
   /** Present when this tile represents a collapsed variant group (count > 1). */
   variant?: VariantMeta;
+  /** When true, clicking selects the tile for comparison instead of opening detail. */
+  compareMode?: boolean;
+  isComparing?: boolean;
+  onToggleCompare?: (docId: string) => void;
   onOpen: (docId: string) => void;
 }
 
-export function CreativeTile({ creative, rankBadge, appEntry, tag, isOwn, variant, onOpen }: CreativeTileProps) {
+export function CreativeTile({
+  creative,
+  rankBadge,
+  appEntry,
+  tag,
+  isOwn,
+  variant,
+  compareMode,
+  isComparing,
+  onToggleCompare,
+  onOpen,
+}: CreativeTileProps) {
   const displayName = appEntry?.name ?? creative.appId;
   const otherGames = variant ? variant.games.length - 1 : 0;
+  const activate = () => (compareMode ? onToggleCompare?.(creative.docId) : onOpen(creative.docId));
 
   // Chrome caps WebMediaPlayer instances per tab (~75). Render the poster by
   // default and only swap to <video> while hovered/focused so at most a handful
@@ -64,21 +80,24 @@ export function CreativeTile({ creative, rankBadge, appEntry, tag, isOwn, varian
     <div
       id={`creative-${creative.docId}`}
       role="button"
+      aria-pressed={compareMode ? !!isComparing : undefined}
       tabIndex={0}
-      onClick={() => onOpen(creative.docId)}
+      onClick={activate}
       onKeyDown={(e) => {
         // Ignore keys bubbling up from the inline-play button (it handles its own).
         if (e.target !== e.currentTarget) return;
         if (e.key === 'Enter' || e.key === ' ') {
           e.preventDefault();
-          onOpen(creative.docId);
+          activate();
         }
       }}
       onMouseEnter={() => isVideo && setIsHovering(true)}
       onMouseLeave={() => isVideo && setIsHovering(false)}
       onFocus={() => isVideo && setIsHovering(true)}
       onBlur={() => isVideo && setIsHovering(false)}
-      className="cursor-pointer overflow-hidden rounded-lg border border-line bg-surface transition-colors hover:border-accent-border focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+      className={`cursor-pointer overflow-hidden rounded-lg border bg-surface transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent ${
+        isComparing ? 'border-accent ring-2 ring-accent' : 'border-line hover:border-accent-border'
+      }`}
     >
       <div className="relative aspect-[4/5] bg-[#dfe0e8]">
         {isPlayable && playingInline ? (
@@ -130,7 +149,19 @@ export function CreativeTile({ creative, rankBadge, appEntry, tag, isOwn, varian
           </>
         )}
 
-        {rankBadge != null && (
+        {compareMode && (
+          <span
+            className={`absolute left-2 top-2 flex h-5 w-5 items-center justify-center rounded-full border ${
+              isComparing ? 'border-accent bg-accent text-white' : 'border-white/80 bg-[rgba(22,23,31,0.45)] text-transparent'
+            }`}
+            aria-hidden
+          >
+            <svg viewBox="0 0 24 24" className="h-3 w-3 fill-none stroke-current" strokeWidth={3}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+            </svg>
+          </span>
+        )}
+        {rankBadge != null && !compareMode && (
           <span className="absolute left-2 top-2 rounded-md bg-ink px-[7px] py-0.5 text-[11px] font-semibold text-white">
             #{rankBadge}
           </span>

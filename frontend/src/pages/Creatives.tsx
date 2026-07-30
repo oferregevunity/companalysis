@@ -20,6 +20,8 @@ import { GalleryTabs, type GalleryTab } from '../components/creatives/GalleryTab
 import { CreativeEmptyState, type ActiveFilterDesc, type RecoveryAction } from '../components/creatives/CreativeEmptyState';
 import { CreativeDetailModal } from '../components/creatives/CreativeDetailModal';
 import { ConceptGeneratorModal } from '../components/creatives/ConceptGeneratorModal';
+import { CreativeCompareModal } from '../components/creatives/CreativeCompareModal';
+import { buildCompareItem } from '../lib/creativeCompare';
 import { durationBucket } from '../lib/creativeBuckets';
 import {
   aggregateHooksThemes,
@@ -236,6 +238,9 @@ export default function Creatives() {
   const [editSetOpen, setEditSetOpen] = useState(false);
   const [conceptsOpen, setConceptsOpen] = useState(false);
   const [groupVariantsOn, setGroupVariantsOn] = useState(true);
+  const [compareMode, setCompareMode] = useState(false);
+  const [compareIds, setCompareIds] = useState<string[]>([]);
+  const [compareOpen, setCompareOpen] = useState(false);
   const pageRef = useRef<HTMLDivElement>(null);
 
   const latestWeek = useMemo(() => getLatestCreativeWeek(), []);
@@ -508,6 +513,48 @@ export default function Creatives() {
   const variantView = useMemo(() => groupVariants(galleryCreatives), [galleryCreatives]);
   const displayCreatives = groupVariantsOn ? variantView.representatives : galleryCreatives;
   const variantMeta = groupVariantsOn ? variantView.meta : NO_VARIANTS;
+
+  // ---- Side-by-side compare (#5) ---------------------------------------------
+  const comparingSet = useMemo(() => new Set(compareIds), [compareIds]);
+
+  const toggleCompare = useCallback((docId: string) => {
+    setCompareIds((prev) => {
+      if (prev.includes(docId)) return prev.filter((id) => id !== docId);
+      // Cap at 2 — adding a third drops the oldest so the pick stays fluid.
+      return prev.length < 2 ? [...prev, docId] : [prev[1], docId];
+    });
+  }, []);
+
+  const exitCompare = useCallback(() => {
+    setCompareMode(false);
+    setCompareIds([]);
+    setCompareOpen(false);
+  }, []);
+
+  const compareItems = useMemo(() => {
+    const byId = new Map(joinedCreatives.map((c) => [c.docId, c]));
+    return compareIds
+      .map((id) => byId.get(id))
+      .filter((c): c is JoinedCreative => !!c)
+      .map((c) => buildCompareItem(c, insightDoc, appNames.get(c.appId)));
+  }, [compareIds, joinedCreatives, insightDoc, appNames]);
+
+  // Preset: the focus game's strongest creative vs the top competitor creative.
+  const compareFocusVsTop = useCallback(() => {
+    const best = (pred: (c: JoinedCreative) => boolean) =>
+      joinedCreatives.filter(pred).reduce<JoinedCreative | null>((top, c) => {
+        if (c.score == null) return top;
+        return top == null || c.score > (top.score ?? -Infinity) ? c : top;
+      }, null);
+    const mine = best((c) => c.appId === focusAppId);
+    const theirs = best((c) => c.appId !== focusAppId);
+    if (!mine || !theirs) return;
+    setCompareMode(true);
+    setCompareIds([mine.docId, theirs.docId]);
+    setCompareOpen(true);
+  }, [joinedCreatives, focusAppId]);
+
+  const hasFocusCreative = useMemo(() => joinedCreatives.some((c) => c.appId === focusAppId && c.score != null), [joinedCreatives, focusAppId]);
 
   // Rail aggregation (stable, over the pre-tag-filter list).
   const railAgg = useMemo(() => aggregateHooksThemes(baseFilteredCreatives, tagMap), [baseFilteredCreatives, tagMap]);
@@ -806,7 +853,37 @@ export default function Creatives() {
                 onSortChange={(sort) => setFilters((p) => ({ ...p, sort }))}
                 groupVariants={groupVariantsOn}
                 onToggleGroupVariants={setGroupVariantsOn}
+                compareMode={compareMode}
+                onToggleCompareMode={(next) => (next ? setCompareMode(true) : exitCompare())}
               />
+
+              {compareMode && (
+                <div className="mt-3 flex flex-wrap items-center gap-3 rounded-lg border border-accent-border bg-accent-tint px-3.5 py-2.5">
+                  <span className="text-xs font-medium text-accent-text">
+                    Compare — pick 2 · {compareIds.length}/2 selected
+                  </span>
+                  <button
+                    type="button"
+                    disabled={compareItems.length < 2}
+                    onClick={() => setCompareOpen(true)}
+                    className="rounded-md border border-accent bg-surface px-2.5 py-1 text-xs font-medium text-accent-text hover:bg-white disabled:opacity-50"
+                  >
+                    Compare these 2
+                  </button>
+                  {hasFocusCreative && (
+                    <button
+                      type="button"
+                      onClick={compareFocusVsTop}
+                      className="text-xs font-medium text-accent-text hover:underline"
+                    >
+                      My best vs their best
+                    </button>
+                  )}
+                  <button type="button" onClick={exitCompare} className="ml-auto text-xs text-ink-muted hover:text-ink">
+                    Done
+                  </button>
+                </div>
+              )}
               {galleryCreatives.length === 0 ? (
                 <CreativeEmptyState
                   activeFilters={activeFilterDescs}
@@ -828,6 +905,9 @@ export default function Creatives() {
                     tagMap={tagMap}
                     variantMeta={variantMeta}
                     focusAppId={focusAppId}
+                    compareMode={compareMode}
+                    comparingIds={comparingSet}
+                    onToggleCompare={toggleCompare}
                     onOpen={setDetailDocId}
                   />
                 </>
@@ -877,6 +957,13 @@ export default function Creatives() {
         gaps={gapRows.map((g) => g.key)}
         rising={risingData.rows.filter((r) => r.missing).map((r) => r.label)}
         appNames={appNames}
+      />
+
+      <CreativeCompareModal
+        open={compareOpen && compareItems.length === 2}
+        onClose={() => setCompareOpen(false)}
+        a={compareItems[0] ?? null}
+        b={compareItems[1] ?? null}
       />
     </div>
   );

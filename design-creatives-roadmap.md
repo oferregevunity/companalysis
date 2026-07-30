@@ -24,8 +24,11 @@ deployed 2026-07-28). **Next:** #2 (competitor new-winner alerts).
 - [x] **#4 Variant grouping** — client-side `groupVariants(phashionGroup)`; one
   representative tile with aggregated SoV/longevity + "×N / +N games" badge;
   default-on "Group variants" toggle. Deployed 2026-07-28 (with SoV-default sort).
-- [ ] #5 Side-by-side compare
+- [x] **#5 Side-by-side compare** — "Compare" mode → pick 2 tiles → diff modal
+  (stats / hook / themes / motivations / why-it-wins / video segments + predicted
+  strengths), plus a "my best vs their best" preset. Built, not yet deployed.
 - [ ] #6 Week-over-week trend
+- [ ] **Dismiss suggested competitors** (backlog — see detail below)
 - [ ] **Video foundation v2 — GCS `fileData` for oversize videos** (scoped below)
 
 Eight workstreams prioritized with RICE. This doc is the source of truth for
@@ -192,6 +195,20 @@ Select 2 tiles → diff panel (hook / segments / motivations / why-it-wins);
 ### #6 — Per-workspace week-over-week trend
 Aggregate accumulated weekly insight docs for the competitor set: hook/motivation
 share over time + creative-fatigue (weeks-live). Needs ≥2–3 weeks of history.
+
+### Dismiss suggested competitors (backlog)
+
+Removing a competitor already works (the ✕ in `CompetitorRail` → `removeCompetitor`
+in `Creatives.tsx`, persisted to the workspace doc). The gap: `runDiscovery` does
+`setCompetitors(found)`, which **overwrites** the list, so a competitor the user
+deliberately removed **reappears** on the next AI discovery / ↻ refresh. There is
+no dismissal that discovery respects.
+
+**Fix:** a per-workspace `dismissedAppIds` blocklist on the `GameWorkspace` doc.
+`removeCompetitor` adds to it; `runDiscovery` filters `found` against it before
+`setCompetitors`. Add an "undo / manage dismissed" affordance so it's reversible
+(and so a re-added competitor isn't silently dropped forever). Small, client-side
++ one workspace field. Effort ~0.5–1 day.
 
 ## Open decisions
 

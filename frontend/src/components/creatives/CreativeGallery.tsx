@@ -12,6 +12,10 @@ export interface CreativeGalleryProps {
   /** Variant-group metadata keyed by docId (see groupVariants); empty when grouping is off. */
   variantMeta?: Map<string, VariantMeta>;
   focusAppId: string;
+  /** Compare-mode: tiles select for comparison instead of opening detail. */
+  compareMode?: boolean;
+  comparingIds?: Set<string>;
+  onToggleCompare?: (docId: string) => void;
   onOpen: (docId: string) => void;
 }
 
@@ -22,6 +26,9 @@ export function CreativeGallery({
   tagMap,
   variantMeta,
   focusAppId,
+  compareMode,
+  comparingIds,
+  onToggleCompare,
   onOpen,
 }: CreativeGalleryProps) {
   return (
@@ -35,6 +42,9 @@ export function CreativeGallery({
           tag={tagMap?.get(c.docId)}
           isOwn={c.appId === focusAppId}
           variant={variantMeta?.get(c.docId)}
+          compareMode={compareMode}
+          isComparing={comparingIds?.has(c.docId)}
+          onToggleCompare={onToggleCompare}
           onOpen={onOpen}
         />
       ))}

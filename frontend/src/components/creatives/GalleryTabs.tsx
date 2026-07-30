@@ -33,6 +33,8 @@ export interface GalleryTabsProps {
   onSortChange: (sort: Filters['sort']) => void;
   groupVariants: boolean;
   onToggleGroupVariants: (next: boolean) => void;
+  compareMode: boolean;
+  onToggleCompareMode: (next: boolean) => void;
 }
 
 export function GalleryTabs({
@@ -44,6 +46,8 @@ export function GalleryTabs({
   onSortChange,
   groupVariants,
   onToggleGroupVariants,
+  compareMode,
+  onToggleCompareMode,
 }: GalleryTabsProps) {
   return (
     <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line pb-2.5">
@@ -66,6 +70,17 @@ export function GalleryTabs({
       </div>
 
       <div className="flex items-center gap-3">
+        <button
+          type="button"
+          onClick={() => onToggleCompareMode(!compareMode)}
+          aria-pressed={compareMode}
+          title="Pick two creatives to compare side by side"
+          className={`rounded-md border px-2 py-1 text-xs font-medium transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent ${
+            compareMode ? 'border-accent bg-accent-tint text-accent-text' : 'border-line text-ink-2 hover:bg-[#faf9fe]'
+          }`}
+        >
+          Compare
+        </button>
         <label className="flex cursor-pointer items-center gap-1.5 text-xs text-ink-muted" title="Collapse the same creative run across multiple games into one tile">
           <input
             type="checkbox"
