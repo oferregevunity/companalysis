@@ -20,6 +20,9 @@ export interface CompetitorRailProps {
   onToggleSelected: (appId: string) => void;
   onToggleGalleryApp: (appId: string) => void;
   onRemoveCompetitor: (appId: string) => void;
+  /** How many suggested competitors the user has dismissed (hidden from AI re-discovery). */
+  dismissedCount: number;
+  onRestoreDismissed: () => void;
   onShowAllCreatives: () => void;
   onAddCompetitor: (game: SearchedGame) => void;
   onCountryChange: (country: string) => void;
@@ -254,6 +257,8 @@ export function CompetitorRail({
   onToggleSelected,
   onToggleGalleryApp,
   onRemoveCompetitor,
+  dismissedCount,
+  onRestoreDismissed,
   onShowAllCreatives,
   onAddCompetitor,
   onCountryChange,
@@ -383,6 +388,18 @@ export function CompetitorRail({
             />
           ))}
           {!running && <AddCompetitorCard onAdd={onAddCompetitor} excludeIds={allIds} />}
+          {dismissedCount > 0 && (
+            <p className="pt-1 text-[11px] text-gray-400">
+              {dismissedCount} suggestion{dismissedCount === 1 ? '' : 's'} hidden from AI discovery ·{' '}
+              <button
+                type="button"
+                onClick={onRestoreDismissed}
+                className="font-medium text-blue-600 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"
+              >
+                Restore
+              </button>
+            </p>
+          )}
         </div>
       )}
     </div>

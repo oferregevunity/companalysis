@@ -20,6 +20,8 @@ export interface GameWorkspace {
   competitors: DiscoveredCompetitor[];
   /** Curated subset of competitor appIds included in analysis. */
   selectedIds: string[];
+  /** Suggested competitors the user dismissed; AI discovery re-adds everything else but skips these. */
+  dismissedAppIds: string[];
   country: string;
   lastAnalyzedWeek: string | null;
   updatedAt?: { seconds: number } | Date | null;
@@ -32,6 +34,7 @@ function sanitize(raw: Record<string, unknown>): GameWorkspace | null {
     focusApp,
     competitors: Array.isArray(raw.competitors) ? (raw.competitors as DiscoveredCompetitor[]) : [],
     selectedIds: Array.isArray(raw.selectedIds) ? (raw.selectedIds as string[]) : [],
+    dismissedAppIds: Array.isArray(raw.dismissedAppIds) ? (raw.dismissedAppIds as string[]) : [],
     country: typeof raw.country === 'string' && raw.country ? raw.country : 'US',
     lastAnalyzedWeek: typeof raw.lastAnalyzedWeek === 'string' ? raw.lastAnalyzedWeek : null,
     updatedAt: (raw.updatedAt as GameWorkspace['updatedAt']) ?? null,
@@ -86,6 +89,7 @@ export function useGameWorkspace(focusAppId: string | null) {
         focusApp: ws.focusApp,
         competitors: ws.competitors,
         selectedIds: ws.selectedIds,
+        dismissedAppIds: ws.dismissedAppIds,
         country: ws.country,
         lastAnalyzedWeek: ws.lastAnalyzedWeek,
         updatedAt: serverTimestamp(),

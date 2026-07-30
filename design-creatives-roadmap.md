@@ -28,7 +28,9 @@ deployed 2026-07-28). **Next:** #2 (competitor new-winner alerts).
   (stats / hook / themes / motivations / why-it-wins / video segments + predicted
   strengths), plus a "my best vs their best" preset. Deployed 2026-07-28.
 - [ ] #6 Week-over-week trend
-- [ ] **Dismiss suggested competitors** (backlog — see detail below)
+- [x] **Dismiss suggested competitors** — per-workspace `dismissedAppIds`
+  blocklist; removing a competitor now sticks (AI re-discovery skips it),
+  re-adding un-dismisses, "N hidden · Restore" in the rail. Built, not deployed.
 - [ ] **Video foundation v2 — GCS `fileData` for oversize videos** (scoped below)
 
 Eight workstreams prioritized with RICE. This doc is the source of truth for

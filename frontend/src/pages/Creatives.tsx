@@ -251,6 +251,7 @@ export default function Creatives() {
   // Curation state, hydrated from the workspace doc or fresh discovery.
   const [competitors, setCompetitors] = useState<DiscoveredCompetitor[]>([]);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [dismissedIds, setDismissedIds] = useState<Set<string>>(new Set());
   const [country, setCountry] = useState('US');
   const [discovering, setDiscovering] = useState(false);
   const [discoveryError, setDiscoveryError] = useState<string | null>(null);
@@ -263,13 +264,14 @@ export default function Creatives() {
         focusApp,
         competitors,
         selectedIds: [...selectedIds],
+        dismissedAppIds: [...dismissedIds],
         country,
         lastAnalyzedWeek: workspace?.lastAnalyzedWeek ?? null,
         ...partial,
       };
       void save(ws).catch((err) => console.error('workspace save failed', err));
     },
-    [focusApp, competitors, selectedIds, country, workspace, save],
+    [focusApp, competitors, selectedIds, dismissedIds, country, workspace, save],
   );
 
   const runDiscovery = useCallback(
@@ -278,7 +280,9 @@ export default function Creatives() {
       setDiscoveryError(null);
       void (async () => {
         try {
-          const { competitors: found } = await discoverCompetitors(game, ctry);
+          const { competitors: all } = await discoverCompetitors(game, ctry);
+          // AI re-suggests everyone each run; drop the ones this workspace dismissed.
+          const found = all.filter((c) => !dismissedIds.has(c.appId));
           setCompetitors(found);
           const selected = found.slice(0, DEFAULT_SELECTED).map((c) => c.appId);
           setSelectedIds(new Set(selected));
@@ -286,6 +290,7 @@ export default function Creatives() {
             focusApp: game,
             competitors: found,
             selectedIds: selected,
+            dismissedAppIds: [...dismissedIds],
             country: ctry,
             lastAnalyzedWeek: null,
           }).catch((err) => console.error('workspace save failed', err));
@@ -296,7 +301,7 @@ export default function Creatives() {
         }
       })();
     },
-    [save],
+    [save, dismissedIds],
   );
 
   // Hydrate curation state once per focused game.
@@ -307,8 +312,10 @@ export default function Creatives() {
     if (workspace) {
       setCompetitors(workspace.competitors);
       setSelectedIds(new Set(workspace.selectedIds));
+      setDismissedIds(new Set(workspace.dismissedAppIds));
       setCountry(workspace.country);
     } else {
+      setDismissedIds(new Set());
       setCountry('US');
       runDiscovery(focusApp, 'US');
     }
@@ -319,6 +326,7 @@ export default function Creatives() {
     setFocusApp(game);
     setCompetitors([]);
     setSelectedIds(new Set());
+    setDismissedIds(new Set());
     setDiscoveryError(null);
     setFilters(defaultFilters());
     setActiveTab('all');
@@ -334,6 +342,7 @@ export default function Creatives() {
     setFocusApp(null);
     setCompetitors([]);
     setSelectedIds(new Set());
+    setDismissedIds(new Set());
     setFilters(defaultFilters());
     setActiveTab('all');
     try {
@@ -414,7 +423,7 @@ export default function Creatives() {
     const t = setTimeout(() => persistWorkspace({}), 800);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedIds, country, competitors]);
+  }, [selectedIds, country, competitors, dismissedIds]);
 
   const addCompetitor = useCallback((game: SearchedGame) => {
     const row: DiscoveredCompetitor = {
@@ -431,6 +440,13 @@ export default function Creatives() {
     };
     setCompetitors((prev) => (prev.some((c) => c.appId === game.appId) ? prev : [...prev, row]));
     setSelectedIds((prev) => new Set(prev).add(game.appId));
+    // Re-adding a previously dismissed game un-dismisses it.
+    setDismissedIds((prev) => {
+      if (!prev.has(game.appId)) return prev;
+      const next = new Set(prev);
+      next.delete(game.appId);
+      return next;
+    });
   }, []);
 
   const removeCompetitor = useCallback((appId: string) => {
@@ -441,7 +457,11 @@ export default function Creatives() {
       next.delete(appId);
       return next;
     });
+    // Remember the dismissal so AI re-discovery doesn't resurrect it.
+    setDismissedIds((prev) => (prev.has(appId) ? prev : new Set(prev).add(appId)));
   }, []);
+
+  const restoreDismissed = useCallback(() => setDismissedIds(new Set()), []);
 
   const rankMap = useMemo(() => {
     const m = new Map<string, number>();
@@ -770,6 +790,8 @@ export default function Creatives() {
     onToggleSelected: toggleSelected,
     onToggleGalleryApp: (id: string) => setFilters((p) => { const n = new Set(p.appIds); if (n.has(id)) n.delete(id); else n.add(id); return { ...p, appIds: n }; }),
     onRemoveCompetitor: removeCompetitor,
+    dismissedCount: dismissedIds.size,
+    onRestoreDismissed: restoreDismissed,
     onShowAllCreatives: () => setFilters((p) => ({ ...p, appIds: new Set<string>() })),
     onAddCompetitor: addCompetitor,
     onCountryChange: setCountry,
