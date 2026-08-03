@@ -1,5 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { selectWinnerVideos, analyzeWinnerVideos, type WinnerVideoInput } from './videoPipeline';
+import type { FetchVideoDeps, StagedVideo } from './videoFetch';
+import type { VideoMedia } from './videoAnalysis';
 
 function winner(over: Partial<WinnerVideoInput>): WinnerVideoInput {
   return {
@@ -27,7 +29,8 @@ const okGenerate = vi.fn(async () => JSON.stringify({
   themes: ['theme'],
 }));
 
-const stubFetch = () => vi.fn(async () => ({ base64: 'AAA=', mimeType: 'video/mp4', byteLength: 3 }));
+const stubFetch = () =>
+  vi.fn(async (): Promise<StagedVideo> => ({ kind: 'inline', base64: 'AAA=', mimeType: 'video/mp4', byteLength: 3 }));
 
 describe('selectWinnerVideos', () => {
   it('keeps only videos with media, ordered by rank, capped', () => {
@@ -86,10 +89,45 @@ describe('analyzeWinnerVideos', () => {
     expect(res.errors[0].reason).toMatch(/no readable analysis/i);
   });
 
-  it('threads maxBytes through to the fetch', async () => {
-    const fetchVideo = stubFetch();
-    await analyzeWinnerVideos([winner({ creativeId: 'a__1' })], { week: 'w', maxBytes: 14 * 1024 * 1024, fetchVideo, generate: okGenerate });
-    expect(fetchVideo).toHaveBeenCalledWith('https://cdn/1.mp4', { maxBytes: 14 * 1024 * 1024 });
+  it('threads the size ceilings to the fetch', async () => {
+    const captured: { opts?: FetchVideoDeps } = {};
+    const fetchVideo = vi.fn(async (_url: string, opts?: FetchVideoDeps): Promise<StagedVideo> => {
+      captured.opts = opts;
+      return { kind: 'inline', base64: 'AAA=', mimeType: 'video/mp4', byteLength: 3 };
+    });
+    await analyzeWinnerVideos(
+      [winner({ creativeId: 'a__1' })],
+      { week: 'w', inlineMaxBytes: 10, hardMaxBytes: 100, fetchVideo, generate: okGenerate },
+    );
+    expect(captured.opts?.inlineMaxBytes).toBe(10);
+    expect(captured.opts?.hardMaxBytes).toBe(100);
+    expect(typeof captured.opts?.stageToGcs).toBe('function');
+  });
+
+  it('stages an oversize video via the injected stageVideo and threads the gcs media to generate', async () => {
+    const stageVideo = vi.fn(async () => 'gs://bucket/creative-video-cache/w/a__1.mp4');
+    // fetchVideo mimics videoFetch's oversize branch: it invokes the injected
+    // per-video stageToGcs closure and returns gcs media.
+    const fetchVideo = vi.fn(async (_url: string, opts?: FetchVideoDeps): Promise<StagedVideo> => {
+      const fileUri = await opts!.stageToGcs!(Buffer.from('x'), 'video/mp4');
+      return { kind: 'gcs', fileUri, mimeType: 'video/mp4', byteLength: 999 };
+    });
+    const seen: VideoMedia[] = [];
+    const generate = vi.fn(async (_p: string, media: VideoMedia) => {
+      seen.push(media);
+      return JSON.stringify({ hookType: 'Other' });
+    });
+
+    const res = await analyzeWinnerVideos(
+      [winner({ creativeId: 'a__1' })],
+      { week: 'w', fetchVideo, stageVideo, generate },
+    );
+
+    expect(res.analyses).toHaveLength(1);
+    // the per-video closure binds week + creativeId onto the staging call
+    expect(stageVideo).toHaveBeenCalledWith(expect.any(Buffer), { week: 'w', creativeId: 'a__1', mimeType: 'video/mp4' });
+    // the gcs media reaches the generator as a fileData-style union
+    expect(seen[0]).toEqual({ kind: 'gcs', fileUri: 'gs://bucket/creative-video-cache/w/a__1.mp4', mimeType: 'video/mp4', byteLength: 999 });
   });
 
   it('marks the focus game so the prompt can flag it', async () => {

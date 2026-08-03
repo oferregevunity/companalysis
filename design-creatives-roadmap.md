@@ -5,10 +5,11 @@
 foundation + slide-14 overhaul, #8, **#3** (concept generator), **#4** (variant
 grouping) + SoV-default sort, **#5** (side-by-side compare), and the
 video-analysis failure diagnostics + 14.5 MB cap, dismiss suggested competitors
-(+ "Suggest more"), and **#6** (week-over-week trend). **Remaining:**
-#2 (new-winner alerts — blocked on delivery channel), and the scoped GCS
-`fileData` v2 for oversize videos. **Next:** #2 (pending delivery-channel
-decision) or GCS `fileData` v2.
+(+ "Suggest more"), and **#6** (week-over-week trend). **Built 2026-08-03
+(awaiting infra + deploy):** the **GCS `fileData` v2** tiered path for oversize
+videos — code + tests landed; needs the one-time bucket + Vertex-SA IAM grants,
+then deploy. **Remaining:** #2 (new-winner alerts — **in-app delivery** chosen;
+buildable). **Next:** provision GCS v2 infra + deploy, then #2.
 **Context:** Builds on the game-workspace flow ([design-game-competitor-analysis.md](design-game-competitor-analysis.md)).
 
 ## Progress
@@ -39,11 +40,17 @@ decision) or GCS `fileData` v2.
   (weeks-live from `durationDays`, variant-collapsed, winners-first) off the
   current week — so the fatigue read works today and composition fills in as
   history accrues (degrades to a "N week(s) so far" note below 2 weeks). Built
-  2026-07-30, awaiting deploy.
+  2026-07-30; deployed 2026-08-03.
 - [x] **Dismiss suggested competitors** — per-workspace `dismissedAppIds`
   blocklist; removing a competitor now sticks (AI re-discovery skips it),
   re-adding un-dismisses, "N hidden · Restore" in the rail. Deployed 2026-07-28.
-- [ ] **Video foundation v2 — GCS `fileData` for oversize videos** (scoped below)
+- [x] **Video foundation v2 — GCS `fileData` for oversize videos** — tiered
+  inline→GCS path (`videoStaging.ts` + `StagedVideo`/`VideoMedia` unions across
+  `videoFetch`/`videoAnalysis`/`videoPipeline`); ≤14.5 MB inline, 14.5–64 MB
+  `fileData` gs://, >64 MB skip. Degrades gracefully (staging failure → non-fatal
+  skip) so it deploys safely before IAM lands. Built + tested 2026-08-03
+  (186 tests green, tsc clean). **Awaiting:** bucket + 2 IAM grants (below), then
+  deploy + set `CREATIVE_VIDEO_CACHE_BUCKET`.
 
 Eight workstreams prioritized with RICE. This doc is the source of truth for
 scope + sequencing; each feature keeps its detail here until it ships.
@@ -108,7 +115,7 @@ batch job video-analyzes only the **top 10 ranked winners shown in the UI**
 (video format; the `rank <= 10` set) per workspace-week; everything else stays
 metadata-tagged. Deep per-video (#8) is on-demand in the detail modal.
 
-## Video foundation v2 — GCS `fileData` for oversize videos (SCOPED)
+## Video foundation v2 — GCS `fileData` for oversize videos (BUILT — awaiting infra + deploy)
 
 **Why:** inline `inlineData` is capped by Vertex's ~20 MB request limit → raw
 video must be ≤ ~14.5 MB (on-demand) / 12 MB (batch). Real UA creatives blow
@@ -239,13 +246,6 @@ dismissed). Removal itself stays the hover-✕ on each card in that drawer.
 
 ## Open decisions
 
-- **Alerts delivery channel** (#2): email vs Slack vs morning-briefing piggyback.
-- **GCS v2 — bucket:** dedicated `companalysis-creative-cache` vs reuse the
-  default app bucket.
-- **GCS v2 — batch scope:** does the top-10 batch pass also stage oversize videos
-  to GCS, or stay inline-only (cap cost/latency) with on-demand-only GCS?
-- **GCS v2 — cleanup:** lifecycle-rule-only (simplest) vs explicit post-analysis
-  delete.
 - **Slide reference:** "slide 14" read as deck section **#7 Iteration Loop**
   (cover + dividers counted). Confirm if the deck numbers differently.
 
@@ -253,4 +253,13 @@ dismissed). Removal itself stays the hover-✕ on each card in that drawer.
 
 - **Video-analysis tier (2026-07-28):** batch job analyzes the top 10 ranked
   winners shown in the UI (video format), per workspace-week.
+- **Alerts delivery channel (#2, 2026-08-03):** in-app only — a "new winners
+  this week" surface in the Creatives UI; no email/Slack/briefing infra.
+- **GCS v2 — bucket (2026-08-03):** dedicated `companalysis-creative-cache`
+  (env `CREATIVE_VIDEO_CACHE_BUCKET`), not the shared default bucket — scopes the
+  Vertex-SA read grant to the throwaway cache, not shared app data.
+- **GCS v2 — batch scope (2026-08-03):** unified — batch top-10 and on-demand
+  share one tiered `fetchCreativeVideo`; GCS fires only for the oversize minority.
+- **GCS v2 — cleanup (2026-08-03):** lifecycle-rule-only (delete after 1 day);
+  no explicit delete in the hot path.
 - **Delivery process:** features built one at a time, committed individually.

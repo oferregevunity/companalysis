@@ -1,9 +1,11 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import {
+  analyzeCreativeVideo,
   buildVideoAnalysisPrompt,
   parseVideoAnalysisResponse,
   MOTIVATIONS,
   ITERABLE_ELEMENTS,
+  type VideoMedia,
 } from './videoAnalysis';
 
 describe('buildVideoAnalysisPrompt', () => {
@@ -81,5 +83,33 @@ describe('parseVideoAnalysisResponse', () => {
 
   it('returns null on malformed JSON', () => {
     expect(parseVideoAnalysisResponse('not json', 'x')).toBeNull();
+  });
+});
+
+describe('analyzeCreativeVideo', () => {
+  const input = { creativeId: 'a__1', appName: 'X', isFocusGame: false, videoDurationSec: 15 };
+  const okJson = JSON.stringify({ hookType: 'Other', motivations: [] });
+
+  it('passes inline media through to the generator', async () => {
+    const seen: VideoMedia[] = [];
+    const generate = vi.fn(async (_p: string, media: VideoMedia) => {
+      seen.push(media);
+      return okJson;
+    });
+    const media: VideoMedia = { kind: 'inline', base64: 'AAA=', mimeType: 'video/mp4' };
+    const a = await analyzeCreativeVideo(input, media, generate);
+    expect(a?.creativeId).toBe('a__1');
+    expect(seen[0]).toEqual(media);
+  });
+
+  it('passes GCS (fileData) media through to the generator', async () => {
+    const seen: VideoMedia[] = [];
+    const generate = vi.fn(async (_p: string, media: VideoMedia) => {
+      seen.push(media);
+      return okJson;
+    });
+    const media: VideoMedia = { kind: 'gcs', fileUri: 'gs://b/creative-video-cache/w/a__1.mp4', mimeType: 'video/mp4' };
+    await analyzeCreativeVideo(input, media, generate);
+    expect(seen[0]).toEqual(media);
   });
 });

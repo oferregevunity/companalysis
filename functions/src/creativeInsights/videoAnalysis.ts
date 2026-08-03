@@ -244,26 +244,37 @@ export function parseVideoAnalysisResponse(raw: string, creativeId: string): Vid
   }
 }
 
-/** Runs a per-video prompt against base64-encoded video bytes. Injected for tests. */
-export type VideoGenerate = (prompt: string, base64: string, mimeType: string) => Promise<string>;
+/**
+ * A video ready to send to Vertex — either inline base64 bytes (small creatives)
+ * or a staged `gs://` fileUri (oversize creatives). See `videoFetch.StagedVideo`.
+ */
+export type VideoMedia =
+  | { kind: 'inline'; base64: string; mimeType: string }
+  | { kind: 'gcs'; fileUri: string; mimeType: string };
 
-/** Default multimodal generate via Vertex Gemini (inline video part + text prompt). */
-export const vertexVideoGenerate: VideoGenerate = async (prompt, base64, mimeType) => {
+/** Runs a per-video prompt against a video (inline or GCS). Injected for tests. */
+export type VideoGenerate = (prompt: string, media: VideoMedia) => Promise<string>;
+
+/** Default multimodal generate via Vertex Gemini (inline or fileData video part + text prompt). */
+export const vertexVideoGenerate: VideoGenerate = async (prompt, media) => {
   const vertexAI = new VertexAI({ project: PROJECT_ID, location: LOCATION });
   const model = vertexAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
+  const videoPart =
+    media.kind === 'inline'
+      ? { inlineData: { data: media.base64, mimeType: media.mimeType } }
+      : { fileData: { fileUri: media.fileUri, mimeType: media.mimeType } };
   const result = await model.generateContent({
-    contents: [{ role: 'user', parts: [{ inlineData: { data: base64, mimeType } }, { text: prompt }] }],
+    contents: [{ role: 'user', parts: [videoPart, { text: prompt }] }],
   });
   return result.response.candidates?.[0]?.content?.parts?.[0]?.text || '';
 };
 
-/** Analyze one video (inline bytes). Returns null when the model output can't be parsed. */
+/** Analyze one video (inline or GCS). Returns null when the model output can't be parsed. */
 export async function analyzeCreativeVideo(
   input: VideoAnalysisInput,
-  base64: string,
-  mimeType: string,
+  media: VideoMedia,
   generate: VideoGenerate = vertexVideoGenerate,
 ): Promise<VideoAnalysis | null> {
-  const raw = await generate(buildVideoAnalysisPrompt(input), base64, mimeType);
+  const raw = await generate(buildVideoAnalysisPrompt(input), media);
   return parseVideoAnalysisResponse(raw, input.creativeId);
 }

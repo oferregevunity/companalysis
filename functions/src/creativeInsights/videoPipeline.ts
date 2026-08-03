@@ -4,6 +4,7 @@ import {
   type VideoGenerate,
 } from './videoAnalysis';
 import { fetchCreativeVideo } from './videoFetch';
+import { stageVideoToGcs } from './videoStaging';
 
 /**
  * Orchestrates video analysis for a workspace's top winners: for each of the
@@ -35,9 +36,13 @@ export interface AnalyzeVideosDeps {
   maxVideos?: number;
   /** Parallel video analyses in flight. Default 3 (Vertex-friendly). */
   concurrency?: number;
-  /** Max raw bytes per video download (see videoFetch). Undefined uses fetch's default (~12 MB). */
-  maxBytes?: number;
+  /** Inline base64 ceiling (raw bytes). Undefined → videoFetch default (~14.5 MB). */
+  inlineMaxBytes?: number;
+  /** Hard cap (raw bytes) above which a video is skipped. Undefined → videoFetch default (64 MB). */
+  hardMaxBytes?: number;
   fetchVideo?: typeof fetchCreativeVideo;
+  /** GCS staging for oversize videos. Injected for tests; defaults to the real `stageVideoToGcs`. */
+  stageVideo?: typeof stageVideoToGcs;
   generate?: VideoGenerate;
 }
 
@@ -82,6 +87,7 @@ export async function analyzeWinnerVideos(
   deps: AnalyzeVideosDeps,
 ): Promise<AnalyzeVideosResult> {
   const fetchVideo = deps.fetchVideo ?? fetchCreativeVideo;
+  const stageVideo = deps.stageVideo ?? stageVideoToGcs;
   const maxVideos = deps.maxVideos ?? 10;
   const concurrency = deps.concurrency ?? 3;
 
@@ -92,7 +98,11 @@ export async function analyzeWinnerVideos(
     concurrency,
     async (w): Promise<{ analysis: VideoAnalysis | null; error: VideoAnalysisError | null }> => {
       try {
-        const { base64, mimeType } = await fetchVideo(w.mediaUrl!, { maxBytes: deps.maxBytes });
+        const media = await fetchVideo(w.mediaUrl!, {
+          inlineMaxBytes: deps.inlineMaxBytes,
+          hardMaxBytes: deps.hardMaxBytes,
+          stageToGcs: (buf, mimeType) => stageVideo(buf, { week: deps.week, creativeId: w.creativeId, mimeType }),
+        });
         const analysis = await analyzeCreativeVideo(
           {
             creativeId: w.creativeId,
@@ -102,8 +112,7 @@ export async function analyzeWinnerVideos(
             title: w.title,
             message: w.message,
           },
-          base64,
-          mimeType,
+          media,
           deps.generate,
         );
         if (!analysis) {
