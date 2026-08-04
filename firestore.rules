@@ -128,5 +128,11 @@ service cloud.firestore {
       allow read: if isUnityUser();
       allow write: if false;
     }
+
+    // AppBird app-details cache (one doc per store id). Server-only: clients read
+    // it through the `appbird/app` route, never directly.
+    match /appbirdApps/{appDocId} {
+      allow read, write: if false;
+    }
   }
 }

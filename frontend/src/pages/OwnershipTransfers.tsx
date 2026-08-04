@@ -1,33 +1,11 @@
 import { useMemo, useState } from 'react';
 import { useOwnershipTransfers } from '../hooks/useOwnershipTransfers';
+import { AppDetailModal } from '../components/transfers/AppDetailModal';
+import { flagEmoji, formatDateTime, relativeFromNow } from '../lib/appStoreFormat';
 import type { OwnershipTransfer, TransferDeveloper } from '../types/ownershipTransfers';
 
 type StoreFilter = 'all' | 'AppStore' | 'GooglePlay';
 type TimeFilter = 'all' | '7d' | '30d' | '90d';
-
-/** ISO 3166-1 alpha-2 → flag emoji (regional indicator pair). */
-function flagEmoji(cc: string | null): string {
-  if (!cc || cc.length !== 2) return '';
-  const A = 0x1f1e6;
-  const up = cc.toUpperCase();
-  return String.fromCodePoint(A + up.charCodeAt(0) - 65, A + up.charCodeAt(1) - 65);
-}
-
-function relativeTime(iso: string): string {
-  const then = new Date(iso).getTime();
-  if (Number.isNaN(then)) return '';
-  const s = Math.max(0, Math.floor((Date.now() - then) / 1000));
-  if (s < 60) return 'just now';
-  const m = Math.floor(s / 60);
-  if (m < 60) return `${m}m ago`;
-  const h = Math.floor(m / 60);
-  if (h < 24) return `${h}h ago`;
-  const d = Math.floor(h / 24);
-  if (d < 30) return `${d}d ago`;
-  const mo = Math.floor(d / 30);
-  if (mo < 12) return `${mo}mo ago`;
-  return `${Math.floor(mo / 12)}y ago`;
-}
 
 const TIME_MS: Record<Exclude<TimeFilter, 'all'>, number> = {
   '7d': 7 * 864e5,
@@ -66,9 +44,21 @@ function DevSide({ dev }: { dev: TransferDeveloper }) {
   );
 }
 
-function TransferRow({ t }: { t: OwnershipTransfer }) {
+function TransferRow({ t, onOpen }: { t: OwnershipTransfer; onOpen: () => void }) {
   return (
-    <div className="flex items-center gap-3 px-4 py-3 border-b border-[#e8eaed] last:border-b-0 hover:bg-[#f8f9fa] transition-colors">
+    <div
+      role="button"
+      tabIndex={0}
+      onClick={onOpen}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          onOpen();
+        }
+      }}
+      aria-label={`Open details for ${t.app.name}`}
+      className="group flex cursor-pointer items-center gap-3 px-4 py-3 border-b border-[#e8eaed] last:border-b-0 hover:bg-[#f8f9fa] focus:bg-[#f8f9fa] focus:outline-none transition-colors"
+    >
       {t.app.iconUrl ? (
         <img src={t.app.iconUrl} alt="" className="w-11 h-11 rounded-xl shrink-0 object-cover" loading="lazy" />
       ) : (
@@ -86,10 +76,20 @@ function TransferRow({ t }: { t: OwnershipTransfer }) {
         </div>
       </div>
       <div className="shrink-0 text-right">
-        <div className="text-[12px] text-[#5f6368]" title={new Date(t.detectedAt).toLocaleString()}>
-          {relativeTime(t.detectedAt)}
+        <div className="text-[12px] text-[#5f6368]" title={formatDateTime(t.detectedAt)}>
+          {relativeFromNow(t.detectedAt, 'short')}
         </div>
       </div>
+      <svg
+        className="h-4 w-4 shrink-0 text-[#dadce0] transition-colors group-hover:text-[#5f6368]"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth={2}
+        viewBox="0 0 24 24"
+        aria-hidden
+      >
+        <path strokeLinecap="round" strokeLinejoin="round" d="m9 18 6-6-6-6" />
+      </svg>
     </div>
   );
 }
@@ -100,6 +100,8 @@ export default function OwnershipTransfers() {
   const [store, setStore] = useState<StoreFilter>('all');
   const [time, setTime] = useState<TimeFilter>('all');
   const [publishers, setPublishers] = useState<string[]>([]);
+  /** Store id of the app whose detail screen is open (null = closed). */
+  const [openStoreId, setOpenStoreId] = useState<string | null>(null);
 
   const allPublishers = useMemo(() => {
     const s = new Set<string>();
@@ -120,6 +122,12 @@ export default function OwnershipTransfers() {
       return true;
     });
   }, [transfers, search, store, time, publishers]);
+
+  /** Every transfer for the open app — an app can change hands more than once. */
+  const openTransfers = useMemo(
+    () => (openStoreId ? transfers.filter((t) => t.app.storeId === openStoreId) : []),
+    [transfers, openStoreId],
+  );
 
   function togglePublisher(p: string) {
     setPublishers((prev) => (prev.includes(p) ? prev.filter((x) => x !== p) : [...prev, p]));
@@ -209,7 +217,7 @@ export default function OwnershipTransfers() {
         ) : filtered.length === 0 ? (
           <div className="p-10 text-center text-[13px] text-[#5f6368]">No transfers match your filters.</div>
         ) : (
-          filtered.map((t) => <TransferRow key={t.key} t={t} />)
+          filtered.map((t) => <TransferRow key={t.key} t={t} onOpen={() => setOpenStoreId(t.app.storeId)} />)
         )}
       </div>
 
@@ -218,6 +226,14 @@ export default function OwnershipTransfers() {
           Showing {filtered.length} of {transfers.length} recent transfers.
         </p>
       )}
+
+      <AppDetailModal
+        storeId={openStoreId}
+        onClose={() => setOpenStoreId(null)}
+        transfers={openTransfers}
+        fallbackName={openTransfers[0]?.app.name}
+        fallbackIconUrl={openTransfers[0]?.app.iconUrl}
+      />
     </div>
   );
 }

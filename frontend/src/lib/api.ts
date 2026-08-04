@@ -1,5 +1,6 @@
 import { auth } from './firebase';
 import type { SavedViewPayload, SavedViewVisibility } from '../types/savedView';
+import type { AppbirdAppDetails } from '../types/appbirdApp';
 
 const API_BASE = '/api';
 
@@ -79,6 +80,10 @@ export const api = {
 
   saveComment: (appId: string, genreId: string, comment: string) =>
     apiCall('comments/save', { appId, genreId, comment }),
+
+  /** Full AppBird store listing for one app (24h server-side cache). */
+  appbirdApp: (storeId: string, refresh = false) =>
+    apiCall<AppbirdAppDetails>('appbird/app', { storeId, refresh }),
 
   savedViews: {
     create: (args: {

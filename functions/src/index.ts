@@ -768,6 +768,21 @@ export const compAnalysisApi = onRequest(
           return sendSuccess(res, result);
         }
 
+        case 'appbird/app': {
+          // Full store listing for one app (powers the transfers detail screen).
+          // Firestore-cached for 24h since AppBird bills per request; pass
+          // `refresh: true` to force a live pull.
+          const { storeId, refresh } = req.body || {};
+          if (!storeId || typeof storeId !== 'string') {
+            return sendError(res, 400, 'storeId (string) is required');
+          }
+          const { getAppDetails } = await import('./appbird/fetchApp');
+          const details = await getAppDetails(db, storeId.trim(), appbirdApiKey.value().trim(), {
+            refresh: refresh === true,
+          });
+          return sendSuccess(res, details);
+        }
+
         default:
           sendError(res, 404, `Unknown route: ${path}`);
       }
