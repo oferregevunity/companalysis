@@ -11,3 +11,5 @@ functions/lib/
 /package-lock.json
 # Per-user local Claude Code settings.
 .claude/settings.local.json
+# Local data snapshots (e.g. AppBird X-Ray corpus for scripts/seed-xray-corpus.ts).
+.local/

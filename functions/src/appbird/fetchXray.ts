@@ -63,16 +63,19 @@ function toDoc(report: XrayReportSummary): Omit<XrayReportDoc, 'popularity'> {
 }
 
 /**
- * Crawl every X-Ray report and upsert it. Facet fields are recomputed on each run
- * so grouping changes roll out with a re-run; existing `popularity` is preserved
- * (merge write), since it comes from a different, more expensive endpoint.
+ * Upsert report rows and recompute the facet leaderboards. Facet fields are
+ * rewritten every time so grouping changes roll out with a re-run; existing
+ * `popularity` survives (merge write), since it comes from a different and more
+ * expensive endpoint.
+ *
+ * Split from the crawl so a local snapshot can be seeded without AppBird calls —
+ * X-Ray has its own monthly request quota, and when it is exhausted this is the
+ * only way to (re)populate. See `scripts/seed-xray-corpus.ts`.
  */
-export async function syncXrayReports(
+export async function upsertXrayReports(
   db: Firestore,
-  apiKey: string,
-): Promise<{ total: number; pages: number; written: number }> {
-  const { reports, total, pages } = await getAllXrayReports(apiKey);
-
+  reports: XrayReportSummary[],
+): Promise<{ written: number }> {
   const col = db.collection(REPORTS_COLLECTION);
   const BATCH_SIZE = 400;
   let written = 0;
@@ -94,7 +97,16 @@ export async function syncXrayReports(
   }
 
   await writeFacets(db, reports);
+  return { written };
+}
 
+/** Crawl every X-Ray report from AppBird, then upsert. */
+export async function syncXrayReports(
+  db: Firestore,
+  apiKey: string,
+): Promise<{ total: number; pages: number; written: number }> {
+  const { reports, total, pages } = await getAllXrayReports(apiKey);
+  const { written } = await upsertXrayReports(db, reports);
   console.log(`xrayReports: ${total} reported, ${reports.length} fetched in ${pages} pages, ${written} written`);
   return { total, pages, written };
 }
