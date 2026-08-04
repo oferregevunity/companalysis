@@ -888,7 +888,18 @@ export async function resolveXrayIntegrationApps(
       ? (cached?.partial ?? false)
       : // Ran out of pages with more to come: the cap stopped us short.
         pages >= maxPages && apps.length < total;
-  const membershipTotal = plan.action === 'incremental' ? Math.max(total, apps.length) : total || apps.length;
+
+  /**
+   * `meta.total` counts REPORTS, and an app can have more than one (a re-teardown
+   * supersedes an earlier report), so it runs slightly ahead of the number of
+   * distinct apps — 42 reports for 39 apps, in the case that surfaced this.
+   *
+   * Once the membership is complete, the deduped app count is therefore the honest
+   * figure; reporting the API total would read as "39 of 42" on a set with nothing
+   * missing, and would offer to re-fetch pages that hold no new apps. The API total
+   * is only the better estimate while the set is knowingly truncated.
+   */
+  const membershipTotal = partial ? Math.max(total, apps.length) : apps.length;
 
   // Reuse the rows we just paid for to backfill the corpus.
   let written = 0;

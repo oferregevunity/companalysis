@@ -31,7 +31,11 @@ import { REQUEST_DELAY_MS, buildUrl, fetchWithRetry, sleep } from './http';
 
 export const XRAY_MAX_LIMIT = 50;
 
-/** A row from the X-Ray report list. One report per app (no version history). */
+/**
+ * A row from the X-Ray report list. Usually one report per app, but not
+ * guaranteed — a re-teardown can leave more than one report for the same
+ * store/storeId, so callers grouping by app must dedupe.
+ */
 export interface XrayReportSummary {
   reportId: string;
   storeId: string;

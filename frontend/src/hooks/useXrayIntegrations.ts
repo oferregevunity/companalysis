@@ -12,6 +12,18 @@ import type { XrayIntegration, XrayIntegrationAppsResult } from '../types/xray';
  * membership, so re-picking a value costs nothing; `loadAll` exists because a broad
  * SDK is returned capped (`partial`) rather than paging the whole corpus by default.
  */
+/**
+ * The live vocabulary is ~3,600 entries, and its tail is teardown-text artifacts
+ * rather than SDKs ("0 Ad Networks Active", "Skadnetwork Ids · Info.Plist Has No
+ * Skadnetworkitems"), all sitting at one or two apps. Suggestions are capped below
+ * this so the picker stays useful; a value below the threshold can still be typed
+ * in and resolved, so nothing is actually unreachable.
+ */
+const MIN_SUGGESTED_APPS = 3;
+
+/** Suggestions shown at once. Enough to cover every integration that matters. */
+const MAX_SUGGESTIONS = 300;
+
 export function useXrayIntegrations() {
   const [options, setOptions] = useState<XrayIntegration[]>([]);
   const [optionsError, setOptionsError] = useState<string | null>(null);
@@ -78,5 +90,30 @@ export function useXrayIntegrations() {
     [selected, membership, resolving],
   );
 
-  return { options, optionsError, selected, membership, resolving, error, resolve, loadAll, keys };
+  /**
+   * Picker suggestions: the widely-shipped integrations, most-used first. Trimmed
+   * from the full vocabulary because that list is far too long to render and its
+   * tail is parse noise (see MIN_SUGGESTED_APPS).
+   */
+  const suggestions = useMemo(
+    () =>
+      options
+        .filter((i) => (i.appCount ?? 0) >= MIN_SUGGESTED_APPS)
+        .sort((a, b) => (b.appCount ?? 0) - (a.appCount ?? 0) || a.label.localeCompare(b.label))
+        .slice(0, MAX_SUGGESTIONS),
+    [options],
+  );
+
+  return {
+    options,
+    suggestions,
+    optionsError,
+    selected,
+    membership,
+    resolving,
+    error,
+    resolve,
+    loadAll,
+    keys,
+  };
 }

@@ -287,25 +287,52 @@ export default function SdkXray() {
                 placeholder="Search game, publisher, SDK…"
                 className="h-9 w-56 rounded-lg border border-[#dadce0] px-3 text-[13px] focus:border-primary-500 focus:outline-none"
               />
-              {integrations.options.length > 0 && (
-                <select
-                  value={integrations.selected ?? ''}
-                  onChange={(e) => {
-                    setPage(0);
-                    void integrations.resolve(e.target.value || null);
-                  }}
-                  disabled={integrations.resolving}
-                  className="h-9 max-w-[220px] rounded-lg border border-[#dadce0] bg-white px-2.5 text-[13px] text-[#5f6368] focus:border-primary-500 focus:outline-none disabled:opacity-50"
-                  title="Show only games shipping a specific SDK or ad network"
-                >
-                  <option value="">Any integration</option>
-                  {integrations.options.map((i) => (
-                    <option key={i.value} value={i.value}>
-                      {i.label}
-                      {i.appCount !== null ? ` (${i.appCount})` : ''}
-                    </option>
-                  ))}
-                </select>
+              {/* Typeahead rather than a select: the vocabulary is ~3,600 entries, so
+                  the datalist offers the widely-shipped ones while still accepting any
+                  typed value. Committed on Enter/blur, not per keystroke, because each
+                  new value is a billed lookup. */}
+              {integrations.suggestions.length > 0 && (
+                <>
+                  <input
+                    list="xray-integrations"
+                    defaultValue={integrations.selected ?? ''}
+                    key={integrations.selected ?? ''}
+                    onKeyDown={(e) => {
+                      if (e.key !== 'Enter') return;
+                      setPage(0);
+                      void integrations.resolve(e.currentTarget.value.trim() || null);
+                    }}
+                    onBlur={(e) => {
+                      const next = e.currentTarget.value.trim() || null;
+                      if (next === (integrations.selected ?? null)) return;
+                      setPage(0);
+                      void integrations.resolve(next);
+                    }}
+                    disabled={integrations.resolving}
+                    placeholder="Any integration (SDK, ad network…)"
+                    className="h-9 w-60 rounded-lg border border-[#dadce0] px-3 text-[13px] focus:border-primary-500 focus:outline-none disabled:opacity-50"
+                    title="Show only games shipping a specific SDK or ad network. Type a name and press Enter."
+                  />
+                  <datalist id="xray-integrations">
+                    {integrations.suggestions.map((i) => (
+                      <option key={i.value} value={i.value}>
+                        {i.appCount !== null ? `${i.appCount} apps` : ''}
+                      </option>
+                    ))}
+                  </datalist>
+                  {integrations.selected && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPage(0);
+                        void integrations.resolve(null);
+                      }}
+                      className="h-9 rounded-lg border border-[#dadce0] bg-white px-2.5 text-[12px] font-medium text-[#5f6368] hover:bg-[#f1f3f4]"
+                    >
+                      Clear
+                    </button>
+                  )}
+                </>
               )}
               <div className="inline-flex overflow-hidden rounded-lg border border-[#dadce0]">
                 {(['all', 'AppStore', 'GooglePlay'] as const).map((s) => (
