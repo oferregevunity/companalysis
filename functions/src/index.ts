@@ -6,6 +6,7 @@ import { fetchAndStoreGenre, fetchAndStoreMonth, getGenreMonths, getGenreWeeks, 
 import { createSavedView, inviteToSavedView } from './api/savedViews';
 import { runAllGenreInsights, runInsightsPipeline } from './insights/pipeline';
 import { rebuildGenreAggregate, deleteGenreAggregates } from './aggregates/genreAggregate';
+import { appbirdApiKey } from './appbird/client';
 
 admin.initializeApp();
 
@@ -41,7 +42,7 @@ export const compAnalysisApi = onRequest(
   {
     timeoutSeconds: 540,
     memory: '2GiB',
-    secrets: [sensorTowerAuthToken],
+    secrets: [sensorTowerAuthToken, appbirdApiKey],
     cors: true,
   },
   async (req, res) => {
@@ -757,6 +758,16 @@ export const compAnalysisApi = onRequest(
           return sendSuccess(res, { success: true });
         }
 
+        case 'ownershipTransfers/run': {
+          // Populate/refresh the ownership-transfers feed from AppBird. Fans out
+          // over the tracked publisher developer ids, unions + dedupes their
+          // transfers, and upserts them into the `ownershipTransfers` collection
+          // (clients read that collection directly). Idempotent.
+          const { runOwnershipTransfers } = await import('./appbird/fetchTransfers');
+          const result = await runOwnershipTransfers(db, appbirdApiKey.value().trim());
+          return sendSuccess(res, result);
+        }
+
         default:
           sendError(res, 404, `Unknown route: ${path}`);
       }
@@ -768,3 +779,4 @@ export const compAnalysisApi = onRequest(
 );
 
 export { weeklyFetchApps, weeklyFetchCreatives, weeklyFetchCreativesFallback, weeklyMarketPulse } from './scheduled/weeklyFetch';
+export { weeklyOwnershipTransfers } from './scheduled/weeklyTransfers';

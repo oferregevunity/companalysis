@@ -6,6 +6,7 @@ import GenreDetail from './pages/GenreDetail';
 import Settings from './pages/Settings';
 import Insights from './pages/Insights';
 import Creatives from './pages/Creatives';
+import OwnershipTransfers from './pages/OwnershipTransfers';
 
 function App() {
   return (
@@ -18,6 +19,7 @@ function App() {
             <Route path="/settings" element={<Settings />} />
             <Route path="/insights" element={<Insights />} />
             <Route path="/creatives" element={<Creatives />} />
+            <Route path="/transfers" element={<OwnershipTransfers />} />
           </Routes>
         </Layout>
       </AuthGuard>

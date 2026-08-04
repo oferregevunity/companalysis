@@ -214,3 +214,69 @@ export function buildFatigue(
       };
     });
 }
+
+// ---- New winners this week --------------------------------------------------
+
+/** A creative that entered the winner set this week (vs. the prior analyzed week). */
+export interface NewWinner {
+  /** docId (`appId__creativeKey`). */
+  creativeId: string;
+  appId: string;
+  appName: string;
+  rank: number;
+  score: number;
+  explanation: string;
+  /** True when this is the focus game's own creative (tagged "you" in the UI). */
+  isFocus: boolean;
+}
+
+export interface NewWinnersResult {
+  /** The newest analyzed week (ISO week key), or null when there are none. */
+  week: string | null;
+  /** True once there are >= 2 analyzed weeks — i.e. a prior week to diff against. */
+  hasBaseline: boolean;
+  /** Winners present this week but not in the prior week's winner set, rank asc. */
+  newWinners: NewWinner[];
+  count: number;
+}
+
+/**
+ * Which winners newly crossed into the set this week — the "new-winner alert"
+ * (#2). Diffs the newest analyzed week's `winners[]` against the prior analyzed
+ * week's by `creativeId`: a creative counts as new if it wins now but did not
+ * last week (brand-new OR newly over the threshold). Focus-game winners are kept
+ * and flagged `isFocus`, so this doubles as a "what's newly working for me" read.
+ *
+ * Needs >= 2 analyzed weeks; with fewer there is no baseline to call anything
+ * "new", so `hasBaseline` is false and `newWinners` is empty (the UI shows a
+ * "first analyzed week" note, mirroring composition). creativeId-level only — a
+ * re-encoded variant of an existing winner can read as new (winners[] carries no
+ * phashionGroup to collapse on).
+ */
+export function buildNewWinners(docs: CreativeInsightDoc[], focusAppId: string): NewWinnersResult {
+  const weekDocs = dedupeByWeek(docs);
+  if (weekDocs.length === 0) return { week: null, hasBaseline: false, newWinners: [], count: 0 };
+
+  const current = weekDocs[weekDocs.length - 1];
+  if (weekDocs.length < 2) {
+    return { week: current.week, hasBaseline: false, newWinners: [], count: 0 };
+  }
+
+  const previous = weekDocs[weekDocs.length - 2];
+  const prevIds = new Set((previous.winners ?? []).map((w) => w.creativeId));
+
+  const newWinners: NewWinner[] = (current.winners ?? [])
+    .filter((w) => !prevIds.has(w.creativeId))
+    .map((w) => ({
+      creativeId: w.creativeId,
+      appId: w.appId,
+      appName: w.appName,
+      rank: w.rank,
+      score: w.score,
+      explanation: w.explanation,
+      isFocus: w.appId === focusAppId,
+    }))
+    .sort((a, b) => a.rank - b.rank);
+
+  return { week: current.week, hasBaseline: true, newWinners, count: newWinners.length };
+}

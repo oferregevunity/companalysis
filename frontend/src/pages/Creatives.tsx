@@ -23,6 +23,7 @@ import { ConceptGeneratorModal } from '../components/creatives/ConceptGeneratorM
 import { CreativeCompareModal } from '../components/creatives/CreativeCompareModal';
 import { WorkspaceTrendModal } from '../components/creatives/WorkspaceTrendModal';
 import { useWorkspaceTrend } from '../hooks/useWorkspaceTrend';
+import { buildNewWinners } from '../lib/creativeTrend';
 import { buildCompareItem } from '../lib/creativeCompare';
 import { durationBucket } from '../lib/creativeBuckets';
 import {
@@ -380,8 +381,10 @@ export default function Creatives() {
   const { run, start } = useWorkspaceAnalysis(latestWeek);
   const running = run.phase === 'fetching' || run.phase === 'analyzing';
   const { data: pulse } = useMarketPulse();
-  // Week-over-week trend history — fetched lazily, only while the Trends modal is open.
-  const { weekDocs: trendWeekDocs, loading: trendLoading } = useWorkspaceTrend(scopeId, trendsOpen);
+  // Week-over-week trend history — loaded once per scope (cheap one-shot getDocs
+  // of <=12 docs) so the new-winner count is ready for the header badge before
+  // the Trends modal opens, not just while it's open.
+  const { weekDocs: trendWeekDocs, loading: trendLoading } = useWorkspaceTrend(scopeId, !!scopeId);
 
   const startAnalysis = useCallback(
     (force: boolean) => {
@@ -546,6 +549,10 @@ export default function Creatives() {
   );
 
   const focusAppId = focusApp?.appId ?? '';
+
+  // Winners that newly crossed into the set this week vs. the prior analyzed
+  // week (#2) — powers the Trends-button count badge + the modal's top section.
+  const newWinners = useMemo(() => buildNewWinners(trendWeekDocs, focusAppId), [trendWeekDocs, focusAppId]);
 
   /** Everything except hook/theme filters — feeds the rail counts so they stay stable. */
   const baseFilteredCreatives = useMemo(
@@ -859,6 +866,7 @@ export default function Creatives() {
         onReanalyze={() => startAnalysis(true)}
         onGenerateConcepts={() => setConceptsOpen(true)}
         onTrends={() => setTrendsOpen(true)}
+        newWinnerCount={newWinners.count}
         onEditSet={() => setEditSetOpen(true)}
         onChangeGame={clearFocusApp}
       />
@@ -1039,6 +1047,7 @@ export default function Creatives() {
         loading={trendLoading}
         current={joinedCreatives}
         appNames={appNames}
+        newWinners={newWinners}
       />
     </div>
   );

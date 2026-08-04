@@ -5,11 +5,10 @@
 foundation + slide-14 overhaul, #8, **#3** (concept generator), **#4** (variant
 grouping) + SoV-default sort, **#5** (side-by-side compare), and the
 video-analysis failure diagnostics + 14.5 MB cap, dismiss suggested competitors
-(+ "Suggest more"), and **#6** (week-over-week trend). **Built 2026-08-03
-(awaiting infra + deploy):** the **GCS `fileData` v2** tiered path for oversize
-videos — code + tests landed; needs the one-time bucket + Vertex-SA IAM grants,
-then deploy. **Remaining:** #2 (new-winner alerts — **in-app delivery** chosen;
-buildable). **Next:** provision GCS v2 infra + deploy, then #2.
+(+ "Suggest more"). **Shipped + deployed 2026-08-03:** **#6** (week-over-week
+trend) and the **GCS `fileData` v2** tiered path for oversize videos. **Built
+2026-08-03 (awaiting hosting deploy):** **#2** (new-winner alerts — in-app).
+**Remaining:** none — all eight workstreams built; #2 pending a hosting deploy.
 **Context:** Builds on the game-workspace flow ([design-game-competitor-analysis.md](design-game-competitor-analysis.md)).
 
 ## Progress
@@ -26,7 +25,15 @@ buildable). **Next:** provision GCS v2 infra + deploy, then #2.
 - [x] **Video-analysis failure diagnostics + on-demand cap** — reasons surfaced
   to the modal + `console.warn` (no more silent "could not be read"); on-demand
   cap 12 → 14.5 MB (inline ceiling). Deployed 2026-07-28.
-- [ ] #2 Competitor new-winner alerts (blocked on delivery-channel decision)
+- [x] **#2 Competitor new-winner alerts** — in-app. Pure-frontend
+  `buildNewWinners` (in `creativeTrend.ts`) diffs the newest analyzed week's
+  `winners[]` vs the prior week's by `creativeId`; flags everyone (focus rows
+  tagged "you"). Surfaced as a count badge on the 📈 Trends button + a "New
+  winners this week" section pinned atop `WorkspaceTrendModal`; trend history
+  now loads per-scope on mount (not just modal-open) so the badge is ready.
+  Degrades below 2 weeks ("first analyzed week" note). Built + verified
+  2026-08-03 (tsc + vite build clean, eslint clean on touched files, 10
+  synthetic assertions on the pure diff). **Awaiting:** hosting deploy.
 - [x] **#4 Variant grouping** — client-side `groupVariants(phashionGroup)`; one
   representative tile with aggregated SoV/longevity + "×N / +N games" badge;
   default-on "Group variants" toggle. Deployed 2026-07-28 (with SoV-default sort).
@@ -49,8 +56,8 @@ buildable). **Next:** provision GCS v2 infra + deploy, then #2.
   `videoFetch`/`videoAnalysis`/`videoPipeline`); ≤14.5 MB inline, 14.5–64 MB
   `fileData` gs://, >64 MB skip. Degrades gracefully (staging failure → non-fatal
   skip) so it deploys safely before IAM lands. Built + tested 2026-08-03
-  (186 tests green, tsc clean). **Awaiting:** bucket + 2 IAM grants (below), then
-  deploy + set `CREATIVE_VIDEO_CACHE_BUCKET`.
+  (186 tests green, tsc clean). Deployed 2026-08-03 (`compAnalysisApi`; bucket +
+  Vertex-SA IAM grants provisioned).
 
 Eight workstreams prioritized with RICE. This doc is the source of truth for
 scope + sequencing; each feature keeps its detail here until it ships.
@@ -115,7 +122,7 @@ batch job video-analyzes only the **top 10 ranked winners shown in the UI**
 (video format; the `rank <= 10` set) per workspace-week; everything else stays
 metadata-tagged. Deep per-video (#8) is on-demand in the detail modal.
 
-## Video foundation v2 — GCS `fileData` for oversize videos (BUILT — awaiting infra + deploy)
+## Video foundation v2 — GCS `fileData` for oversize videos (SHIPPED)
 
 **Why:** inline `inlineData` is capped by Vertex's ~20 MB request limit → raw
 video must be ≤ ~14.5 MB (on-demand) / 12 MB (batch). Real UA creatives blow
@@ -200,10 +207,20 @@ the focus game's gaps + focus-game metadata → a structured concept mapped onto
 the deck's **Video Brief** template (Concept+Motivation / Hook / Visual style /
 Intro-Gameplay-End / Length / References). Extends `frontend/src/lib/creativeBrief.ts`.
 
-### #2 — Competitor new-winner alerts
-Diff the weekly-refresh output per workspace; a new creative crossing the winner
-threshold → digest. **OPEN DECISION: delivery channel.** No email/Slack infra
-exists; simplest is piggybacking the morning-briefing flow. Effort hinges on this.
+### #2 — Competitor new-winner alerts (BUILT — awaiting hosting deploy)
+In-app (delivery decided: no email/Slack/briefing). `buildNewWinners(weekDocs,
+focusAppId)` in `frontend/src/lib/creativeTrend.ts` diffs the newest analyzed
+week's `winners[]` (the curated score≥60 top set on each `CreativeInsightDoc`)
+against the prior week's by `creativeId` — a "new winner" is one winning now but
+not last week (brand-new OR newly-crossed). Flags everyone; focus-game rows carry
+an `isFocus` "you" tag. Reuses #6's machinery entirely — `useWorkspaceTrend`
+(now enabled per-scope on mount, not just modal-open, so the count is ready),
+rendered as a count badge on the 📈 Trends button (`CreativesHeader`) + a "New
+winners this week" section pinned atop `WorkspaceTrendModal`. Needs ≥2 analyzed
+weeks; degrades to a "first analyzed week" note otherwise. No functions, no new
+index, no push channel. **v1 limitation:** creativeId-level diff — `winners[]`
+carries no `phashionGroup`, so a re-encoded variant of an existing winner can
+read as "new".
 
 ### #4 — Creative variant grouping (SHIPPED)
 Client-side `groupBy(phashionGroup)`; one tile + network/country/variant badges.

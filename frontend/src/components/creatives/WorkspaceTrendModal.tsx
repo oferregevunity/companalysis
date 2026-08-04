@@ -6,6 +6,7 @@ import {
   buildCompositionTrend,
   buildFatigue,
   type FatigueRow,
+  type NewWinnersResult,
   type TrendSeries,
 } from '../../lib/creativeTrend';
 
@@ -21,6 +22,8 @@ export interface WorkspaceTrendModalProps {
   /** Current week's joined creatives — powers the fatigue read (no history needed). */
   current: JoinedCreative[];
   appNames: Map<string, AppNameMapEntry>;
+  /** Winners that newly crossed into the set this week (#2) — from buildNewWinners. */
+  newWinners: NewWinnersResult;
 }
 
 /** Short "2026-W31" -> "W31". */
@@ -115,6 +118,45 @@ function FatigueList({
   );
 }
 
+function NewWinnersList({
+  result,
+  appNames,
+}: {
+  result: NewWinnersResult;
+  appNames: Map<string, AppNameMapEntry>;
+}) {
+  return (
+    <div className="flex flex-col gap-1.5">
+      {result.newWinners.map((w) => {
+        const name = appNames.get(w.appId)?.name ?? w.appName ?? w.appId;
+        return (
+          <div key={w.creativeId} className="flex items-start gap-3">
+            <span className="mt-px w-[26px] shrink-0 text-right text-[11px] tabular-nums text-ink-faint">
+              #{w.rank}
+            </span>
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-1.5">
+                <span className="truncate text-[12px] font-medium text-ink" title={name}>
+                  {name}
+                </span>
+                {w.isFocus && (
+                  <span className="shrink-0 rounded-full border border-accent-border bg-accent-tint px-1.5 py-px text-[10px] font-medium text-accent-text">
+                    you
+                  </span>
+                )}
+              </div>
+              {w.explanation && (
+                <p className="mt-0.5 line-clamp-2 text-[11px] leading-snug text-ink-muted">{w.explanation}</p>
+              )}
+            </div>
+            <span className="w-[38px] shrink-0 text-right text-[12px] tabular-nums text-ink">{w.score}</span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 const SECTION_KICKER = 'text-[11px] font-semibold uppercase tracking-[0.08em] text-ink-muted';
 
 export function WorkspaceTrendModal({
@@ -126,6 +168,7 @@ export function WorkspaceTrendModal({
   loading,
   current,
   appNames,
+  newWinners,
 }: WorkspaceTrendModalProps) {
   useEffect(() => {
     if (!open) return;
@@ -182,6 +225,25 @@ export function WorkspaceTrendModal({
 
         {/* Body */}
         <div className="min-h-0 flex-1 space-y-6 overflow-y-auto px-5 py-4">
+          {/* New winners this week — the in-app new-winner alert (#2). */}
+          <section>
+            <div className="mb-2 flex items-baseline gap-2">
+              <span className={SECTION_KICKER}>New winners this week</span>
+              <span className="text-[11px] text-ink-faint">crossed into the set vs. last week</span>
+            </div>
+            {loading ? (
+              <p className="text-xs text-ink-muted">Loading…</p>
+            ) : !newWinners.hasBaseline ? (
+              <p className="text-xs text-ink-muted">
+                First analyzed week — no prior week to compare yet. New winners will show here next week.
+              </p>
+            ) : newWinners.count > 0 ? (
+              <NewWinnersList result={newWinners} appNames={appNames} />
+            ) : (
+              <p className="text-xs text-ink-muted">No new winners crossed into the set this week.</p>
+            )}
+          </section>
+
           {/* Creative fatigue — always available from the current week. */}
           <section>
             <div className="mb-2 flex items-baseline gap-2">

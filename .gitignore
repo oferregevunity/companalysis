@@ -6,3 +6,8 @@ dist/
 .firebase/
 functions/lib/
 .worktrees/
+.DS_Store
+# Spurious lockfile — there is no root package.json (packages live in frontend/functions/scripts).
+/package-lock.json
+# Per-user local Claude Code settings.
+.claude/settings.local.json

@@ -10,9 +10,11 @@ import type { CreativeInsightDoc } from '../types/creatives';
  * new index). Each scope has one doc per week (`..._week_{week}`), so the caller
  * dedupes/sorts by the `week` field itself (see `buildCompositionTrend`).
  *
- * `enabled` gates the fetch so the query only fires when the Trends modal opens —
- * a plain one-shot `getDocs` (history, not live). Scores-only weeks (a fetch that
- * never ran analysis → no `generatedAt`) are skipped.
+ * `enabled` gates the fetch. Callers may enable it on mount (per scope) so the
+ * new-winner count (#2) is ready for the header badge before the Trends modal
+ * opens — it's a cheap one-shot `getDocs` (history, not live), not a live sub.
+ * Scores-only weeks (a fetch that never ran analysis → no `generatedAt`) are
+ * skipped.
  */
 const WEEK_LIMIT = 12;
 

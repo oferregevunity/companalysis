@@ -24,6 +24,8 @@ export interface CreativesHeaderProps {
   onTrends: () => void;
   onEditSet: () => void;
   onChangeGame: () => void;
+  /** Count of winners that newly crossed into the set this week (#2) — badges the Trends button. */
+  newWinnerCount?: number;
 }
 
 function GameIcon({ url, name, size }: { url?: string | null; name: string; size: number }) {
@@ -59,6 +61,7 @@ export function CreativesHeader({
   onTrends,
   onEditSet,
   onChangeGame,
+  newWinnerCount = 0,
 }: CreativesHeaderProps) {
   const selected = competitors.filter((c) => selectedIds.has(c.appId));
   const shownChips = selected.slice(0, 6);
@@ -138,10 +141,22 @@ export function CreativesHeader({
           <button
             type="button"
             onClick={onTrends}
-            title="Week-over-week hook/motivation mix and creative fatigue"
-            className="rounded-lg border border-line bg-surface px-3 py-[5px] text-xs font-medium text-ink-2 hover:bg-[#faf9fe] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+            title={
+              newWinnerCount > 0
+                ? `${newWinnerCount} new winner${newWinnerCount === 1 ? '' : 's'} this week · week-over-week mix and fatigue`
+                : 'Week-over-week hook/motivation mix and creative fatigue'
+            }
+            className="inline-flex items-center gap-1.5 rounded-lg border border-line bg-surface px-3 py-[5px] text-xs font-medium text-ink-2 hover:bg-[#faf9fe] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
           >
             📈 Trends
+            {newWinnerCount > 0 && (
+              <span
+                className="inline-flex min-w-[16px] items-center justify-center rounded-full bg-accent px-1 text-[10px] font-semibold leading-[16px] text-white tabular-nums"
+                aria-label={`${newWinnerCount} new winners this week`}
+              >
+                {newWinnerCount}
+              </span>
+            )}
           </button>
           <button
             type="button"

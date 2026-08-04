@@ -41,6 +41,16 @@ export function Layout({ children }: { children: ReactNode }) {
       ),
     },
     {
+      path: '/transfers',
+      label: 'Transfers',
+      match: (p: string) => p === '/transfers',
+      icon: (
+        <svg className="w-[18px] h-[18px]" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" d="M7.5 21 3 16.5m0 0L7.5 12M3 16.5h13.5m0-13.5L21 7.5m0 0L16.5 12M21 7.5H7.5" />
+        </svg>
+      ),
+    },
+    {
       path: '/settings',
       label: 'Settings',
       match: (p: string) => p === '/settings',

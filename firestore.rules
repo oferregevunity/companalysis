@@ -122,5 +122,11 @@ service cloud.firestore {
       allow read: if isUnityUser();
       allow write: if false;
     }
+
+    // AppBird ownership-transfers feed (one doc per transfer). Written server-side.
+    match /ownershipTransfers/{transferId} {
+      allow read: if isUnityUser();
+      allow write: if false;
+    }
   }
 }
