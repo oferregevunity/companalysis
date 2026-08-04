@@ -2,18 +2,22 @@ import * as admin from 'firebase-admin';
 import type { Firestore } from 'firebase-admin/firestore';
 
 /**
- * Meters AppBird consumption so a background job can never quietly drain the
- * monthly allowance again (which is what happened on 2026-08-04: X-Ray has its
- * own small monthly quota, separate from /apps and /developers).
+ * Meters AppBird consumption so neither a background job nor interactive browsing
+ * can quietly drain the allowance (which is what happened on 2026-08-04).
  *
- * Counting happens in-process during a run — `countAttempt` is wired into the
- * HTTP layer's per-attempt hook, so retries count too, since they also bill —
- * and is flushed once to `appbirdUsage/{YYYY-MM}` at the end. Before a run
- * starts, `checkBudget` reads that month's total and refuses to start when the
- * self-imposed cap is already spent.
+ * Spend is measured in CREDITS, not requests: a report page costs 150 while an app
+ * listing costs 5, so a request count misrepresents cost by up to 30x. Everything
+ * draws on ONE pool of 20,000 per period — an earlier version of this file assumed
+ * X-Ray had a separate quota, which the usage dashboard disproved.
  *
- * The cap is ours, not AppBird's: it exists to keep automation well below the
- * real ceiling so interactive use (a teardown, an app listing) always has room.
+ * Counting happens in-process during a run — `countAttempt` is wired into the HTTP
+ * layer's per-attempt hook, so retries count too — and is flushed to a per-day doc,
+ * `appbirdUsage/{YYYY-MM-DD}`. `checkBudget` sums the trailing window and refuses
+ * once the self-imposed cap is spent; see USAGE_WINDOW_DAYS for why the window is
+ * trailing rather than aligned to AppBird's period.
+ *
+ * The cap is ours, not AppBird's, and is deliberately below the real ceiling: this
+ * meter only sees calls made through these functions, and the account is shared.
  */
 
 const COLLECTION = 'appbirdUsage';
@@ -52,14 +56,25 @@ export const ENDPOINT_CREDITS: Record<string, number> = {
 const UNKNOWN_ENDPOINT_CREDITS = 5;
 
 /**
- * Self-imposed monthly credit ceiling across every AppBird endpoint.
- *
- * SET THIS TO THE REAL PLAN ALLOWANCE. It is a placeholder: one observed month had
- * already spent ~19,900 credits (18,150 of it on `xray-reports` alone), so this is
- * deliberately set near that level to make the gate bite rather than rubber-stamp.
- * Actual spend is now recorded per month in `appbirdUsage/{YYYY-MM}.credits`.
+ * The plan's actual allowance per billing period, for reference. Prepaid balance is
+ * 0, so there is no buffer once this is gone — requests simply fail.
  */
-export const DEFAULT_MONTHLY_CREDITS = 20000;
+export const PLAN_MONTHLY_CREDITS = 20000;
+
+/**
+ * Self-imposed ceiling for THIS APP, deliberately below the 20,000 the plan allows.
+ *
+ * The headroom is not caution for its own sake: this meter only sees calls made
+ * through these functions, and the account is shared — the usage dashboard shows
+ * `/v1/mcp` and `/v1/search` traffic that this codebase never calls. Spending to the
+ * real limit would starve those other consumers, and with a prepaid balance of 0
+ * there is nothing to absorb the overrun.
+ *
+ * Steady state for this app is ~2,900 per period (weekly incremental crawl, the
+ * popularity sweep, and a quarterly full crawl amortized), so this leaves a wide
+ * margin for interactive use as well.
+ */
+export const DEFAULT_MONTHLY_CREDITS = 14000;
 
 /**
  * What one request to `pathname` costs.
@@ -79,8 +94,36 @@ export function endpointCredits(pathname: string): number {
   );
 }
 
-export function usageMonthKey(now = new Date()): string {
-  return `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}`;
+/**
+ * Spend is bucketed per DAY and the budget is checked against a trailing window,
+ * rather than against a period that tries to mirror AppBird's own.
+ *
+ * The plan's period nominally runs the 28th to the 28th, but AppBird support can
+ * reset the quota mid-cycle on request, so no boundary we hardcode stays true. A
+ * trailing window needs no boundary: it is never wrong about *when* the period
+ * started, and after an out-of-band reset it errs toward refusing rather than
+ * overspending — the right direction when the prepaid balance is 0 and failures are
+ * hard stops. A deliberate run can still pass `ignoreMonthlyBudget`.
+ *
+ * Daily buckets also leave a spend history, which is what was missing when this
+ * month's usage came as a surprise.
+ */
+export const USAGE_WINDOW_DAYS = 30;
+
+/** Firestore doc id for one day of spend, e.g. `2026-08-04`. */
+export function usageDayKey(now = new Date()): string {
+  return now.toISOString().slice(0, 10);
+}
+
+/** Day keys covering the trailing window ending at `now`, newest first. */
+export function usageWindowKeys(now = new Date(), days = USAGE_WINDOW_DAYS): string[] {
+  const keys: string[] = [];
+  for (let i = 0; i < days; i++) {
+    const d = new Date(now.getTime());
+    d.setUTCDate(d.getUTCDate() - i);
+    keys.push(usageDayKey(d));
+  }
+  return keys;
 }
 
 /** Per-run tally of real HTTP attempts, grouped by endpoint family. */
@@ -128,7 +171,7 @@ export class CallMeter {
       update[`byEndpoint.${family}`] = admin.firestore.FieldValue.increment(n);
     }
     try {
-      await db.collection(COLLECTION).doc(usageMonthKey(now)).set(update, { merge: true });
+      await db.collection(COLLECTION).doc(usageDayKey(now)).set(update, { merge: true });
     } catch (err) {
       console.warn('appbirdUsage flush failed:', err);
     }
@@ -149,7 +192,11 @@ export function endpointFamily(pathname: string): string {
 }
 
 export interface BudgetStatus {
+  /** Human label for the window measured, e.g. "30 days to 2026-08-04". */
   month: string;
+  /** First day counted, inclusive. */
+  windowStart: string;
+  windowDays: number;
   /** Request count, across every AppBird endpoint. Reporting only. */
   used: number;
   budget: number;
@@ -182,29 +229,38 @@ export async function withCallMeter<T>(
 }
 
 /**
- * How much of this month's self-imposed budget is left. `budget` can be lowered
- * per call site; automated jobs should pass a share of the total so one job
- * cannot spend everything.
+ * Spend over the trailing window, and how much of the self-imposed budget is left.
+ * `budget` can be lowered per call site; automated jobs should pass a share of the
+ * total so one job cannot spend everything.
  */
 export async function checkBudget(
   db: Firestore,
-  opts: { budget?: number; creditsBudget?: number; now?: Date } = {},
+  opts: { budget?: number; creditsBudget?: number; windowDays?: number; now?: Date } = {},
 ): Promise<BudgetStatus> {
-  const month = usageMonthKey(opts.now);
+  const now = opts.now ?? new Date();
+  const windowDays = opts.windowDays ?? USAGE_WINDOW_DAYS;
+  const dayKeys = usageWindowKeys(now, windowDays);
+  const windowStart = dayKeys[dayKeys.length - 1];
+  const month = `${windowDays} days to ${usageDayKey(now)}`;
   const budget = opts.budget ?? DEFAULT_MONTHLY_BUDGET;
   const creditsBudget = opts.creditsBudget ?? DEFAULT_MONTHLY_CREDITS;
   let used = 0;
   let creditsUsed = 0;
   try {
-    const snap = await db.collection(COLLECTION).doc(month).get();
-    const data = snap.data();
-    if (typeof data?.total === 'number') used = data.total;
-    if (typeof data?.credits === 'number') creditsUsed = data.credits;
+    const col = db.collection(COLLECTION);
+    const snaps = await db.getAll(...dayKeys.map((k) => col.doc(k)));
+    for (const snap of snaps) {
+      const data = snap.data();
+      if (typeof data?.total === 'number') used += data.total;
+      if (typeof data?.credits === 'number') creditsUsed += data.credits;
+    }
   } catch (err) {
     // A read failure must not become a reason to spend unmetered.
     console.warn('appbirdUsage read failed, assuming budget spent:', err);
     return {
       month,
+      windowStart,
+      windowDays,
       used: budget,
       budget,
       remaining: 0,
@@ -219,6 +275,8 @@ export async function checkBudget(
   const creditsSpent = creditsUsed >= creditsBudget;
   return {
     month,
+    windowStart,
+    windowDays,
     used,
     budget,
     remaining: Math.max(budget - used, 0),

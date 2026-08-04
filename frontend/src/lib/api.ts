@@ -109,6 +109,17 @@ export const api = {
   xrayPopularity: (storeIds: string[], force = false) =>
     apiCall<XrayPopularityResult>('xray/popularity', { storeIds, force }),
 
+  /**
+   * Fetch teardowns published since the last sync. Costs one AppBird report page
+   * (150 credits) in a normal week, so it is user-initiated — nothing crawls X-Ray
+   * on a schedule. `enrichLimit: 0` keeps it to the crawl; popularity is a separate,
+   * cheaper action.
+   */
+  xraySyncNew: () =>
+    apiCall<{ total: number; pages: number; written: number; full: boolean; reason: string }>('xray/run', {
+      enrichLimit: 0,
+    }),
+
   /** Re-crawl the X-Ray corpus and enrich a slice of it. Normally the weekly job. */
   xrayRun: (enrichLimit?: number) =>
     apiCall<{ total: number; pages: number; written: number; enriched: number; remaining: number; errors: string[] }>(

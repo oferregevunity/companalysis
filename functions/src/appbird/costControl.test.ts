@@ -1,7 +1,14 @@
 import { describe, it, expect } from 'vitest';
 import { Timestamp } from 'firebase-admin/firestore';
 import { planCrawl, shiftDate } from './fetchXray';
-import { CallMeter, endpointCredits, endpointFamily, usageMonthKey } from './usage';
+import {
+  CallMeter,
+  endpointCredits,
+  endpointFamily,
+  usageDayKey,
+  usageWindowKeys,
+  USAGE_WINDOW_DAYS,
+} from './usage';
 
 /**
  * Guards on the pieces that decide how much AppBird quota a run may spend. X-Ray
@@ -160,9 +167,25 @@ describe('CallMeter', () => {
   });
 });
 
-describe('usageMonthKey', () => {
-  it('buckets by UTC month', () => {
-    expect(usageMonthKey(new Date('2026-08-04T23:59:59Z'))).toBe('2026-08');
-    expect(usageMonthKey(new Date('2026-01-01T00:00:00Z'))).toBe('2026-01');
+describe('usage window', () => {
+  it('buckets spend by UTC day', () => {
+    expect(usageDayKey(new Date('2026-08-04T23:59:59Z'))).toBe('2026-08-04');
+    expect(usageDayKey(new Date('2026-01-01T00:00:00Z'))).toBe('2026-01-01');
+  });
+
+  it('covers a trailing window ending today, newest first', () => {
+    const keys = usageWindowKeys(new Date('2026-08-04T12:00:00Z'), 3);
+    expect(keys).toEqual(['2026-08-04', '2026-08-03', '2026-08-02']);
+  });
+
+  it('walks back across month and year boundaries', () => {
+    expect(usageWindowKeys(new Date('2026-03-01T12:00:00Z'), 2)).toEqual(['2026-03-01', '2026-02-28']);
+    expect(usageWindowKeys(new Date('2026-01-01T12:00:00Z'), 2)).toEqual(['2026-01-01', '2025-12-31']);
+  });
+
+  it('spans the full window by default, so an arbitrary quota reset cannot be missed', () => {
+    // The plan period nominally runs the 28th to the 28th, but support can reset
+    // mid-cycle, so the window is trailing rather than aligned to that boundary.
+    expect(usageWindowKeys(new Date('2026-08-04T12:00:00Z'))).toHaveLength(USAGE_WINDOW_DAYS);
   });
 });

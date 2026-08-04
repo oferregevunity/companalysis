@@ -7,8 +7,19 @@ import fetch from 'node-fetch';
  */
 export const BASE_URL = 'https://api.appbird.ai/v1';
 
-/** Politeness delay between sequential AppBird calls. */
-export const REQUEST_DELAY_MS = 150;
+/**
+ * Delay between sequential AppBird calls, set by the account's 60 requests/minute
+ * rate limit — 1,100ms paces us at ~54/min with margin.
+ *
+ * This was 150ms, which is ~400/min: nearly 7x over the limit. That is where the
+ * 429s and the failed requests visible on the usage dashboard came from. Failures
+ * are not billed, but they burn wall-clock time and trigger the retry path, and a
+ * retry that succeeds IS billed — so pacing correctly is cheaper than backing off.
+ *
+ * Cost of the slowdown is acceptable: a 24-page crawl takes ~26s and a 100-app
+ * enrichment sweep ~110s, both well inside the 540s function timeout.
+ */
+export const REQUEST_DELAY_MS = 1100;
 
 const MAX_RETRIES = 3;
 

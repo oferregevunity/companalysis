@@ -109,8 +109,10 @@ function Chips({ items, tone = 'neutral' }: { items: { label: string; count: num
 }
 
 export default function SdkXray() {
-  const { rows, facets, loading, error, enrich } = useXrayReports();
+  const { rows, facets, loading, error, enrich, syncNew } = useXrayReports();
   const integrations = useXrayIntegrations();
+  const [syncing, setSyncing] = useState(false);
+  const [syncNote, setSyncNote] = useState<string | null>(null);
 
   const [dimension, setDimension] = useState<XrayDimension>('mediator');
   const [facetKey, setFacetKey] = useState<string | null>(null);
@@ -148,6 +150,19 @@ export default function SdkXray() {
     setDimension(dim);
     setFacetKey(null);
     setPage(0);
+  }
+
+  async function pullNewTeardowns() {
+    setSyncing(true);
+    setSyncNote(null);
+    try {
+      const r = await syncNew();
+      setSyncNote(r.written > 0 ? `Added ${r.written} teardown${r.written === 1 ? '' : 's'}.` : 'Already up to date.');
+    } catch (err) {
+      setSyncNote(err instanceof Error ? err.message : 'Sync failed');
+    } finally {
+      setSyncing(false);
+    }
   }
 
   async function loadPopularity() {
@@ -398,6 +413,16 @@ export default function SdkXray() {
                   {enriching ? 'Loading popularity…' : `Rank ${Math.min(missing.length, 60)} more`}
                 </button>
               )}
+              <button
+                type="button"
+                onClick={() => void pullNewTeardowns()}
+                disabled={syncing}
+                className="h-9 rounded-lg border border-[#dadce0] bg-white px-2.5 text-[12px] font-medium text-[#5f6368] hover:bg-[#f1f3f4] disabled:opacity-50"
+                title="Fetch teardowns published since the last sync. Nothing crawls X-Ray automatically, so this is how new games arrive."
+              >
+                {syncing ? 'Checking for new teardowns…' : 'Sync new teardowns'}
+              </button>
+              {syncNote && <span className="text-[12px] text-[#5f6368]">{syncNote}</span>}
               {enrichError && <span className="text-[12px] text-[#c5221f]">{enrichError}</span>}
             </div>
 

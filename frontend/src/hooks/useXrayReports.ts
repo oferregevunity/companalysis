@@ -65,5 +65,18 @@ export function useXrayReports() {
     [load],
   );
 
-  return { rows, facets, loading, error, enrich };
+  /**
+   * Pull teardowns published since the last sync, then re-read. Nothing crawls X-Ray
+   * on a schedule, so this is the only way new teardowns arrive — and it is one
+   * billed report page, which is why it is a deliberate action rather than automatic.
+   */
+  const syncNew = useCallback(async () => {
+    const result = await api.xraySyncNew();
+    const res = await load();
+    setRows(res.rows);
+    setFacets(res.facets);
+    return result;
+  }, [load]);
+
+  return { rows, facets, loading, error, enrich, syncNew };
 }

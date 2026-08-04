@@ -428,6 +428,25 @@ export async function syncXrayReports(
   return { total, pages, written, full: plan.full, reason: plan.reason };
 }
 
+/**
+ * Rebuild the read model from what Firestore already holds. Costs Firestore reads
+ * and NO AppBird credits.
+ *
+ * This is what the weekly job does now. Every billable X-Ray call is user-initiated
+ * — a teardown when someone opens a game, a membership resolve when someone picks an
+ * integration, a crawl when someone asks for new teardowns — so nothing spends the
+ * allowance unless a person asked for it. What still needs doing on a schedule is
+ * keeping the derived leaderboards consistent with the stored rows, which is free:
+ * it picks up rows backfilled by integration queries and any change to the grouping
+ * rules, without touching AppBird.
+ */
+export async function refreshXrayReadModel(db: Firestore): Promise<{ corpus: number }> {
+  const reports = await readAllStoredReports(db);
+  await writeFacets(db, reports);
+  console.log(`xray read model rebuilt from ${reports.length} stored rows (0 AppBird credits)`);
+  return { corpus: reports.length };
+}
+
 /** Recompute and store the facet leaderboards. */
 async function writeFacets(db: Firestore, reports: XrayReportSummary[]): Promise<void> {
   const facets = buildFacets(reports);
