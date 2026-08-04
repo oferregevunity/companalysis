@@ -91,9 +91,20 @@ export const api = {
   appbirdApp: (storeId: string, refresh = false) =>
     apiCall<AppbirdAppDetails>('appbird/app', { storeId, refresh }),
 
-  /** Full AppBird X-Ray teardown for one app (cached per report id). */
-  xrayReport: (args: { storeId: string; store?: string; expectedReportId?: string; refresh?: boolean }) =>
-    apiCall<XrayTeardownResult>('xray/report', args),
+  /**
+   * Full AppBird X-Ray teardown for one app (cached per report id).
+   *
+   * Pass `cachedOnly` to answer from cache without spending — the UI opens a game
+   * that way, so a row click never costs credits. Omitting it opts into a 500-credit
+   * fetch, which only the explicit fetch control does.
+   */
+  xrayReport: (args: {
+    storeId: string;
+    store?: string;
+    expectedReportId?: string;
+    refresh?: boolean;
+    cachedOnly?: boolean;
+  }) => apiCall<XrayTeardownResult>('xray/report', args),
 
   /** Values accepted by the X-Ray `integration` filter (cached a week server-side). */
   xrayIntegrations: (refresh = false) => apiCall<XrayIntegrationsResult>('xray/integrations', { refresh }),

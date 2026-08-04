@@ -117,8 +117,11 @@ export interface XrayTeardown extends Omit<XrayReportRow, 'popularity'> {
 }
 
 export interface XrayTeardownResult {
-  report: XrayTeardown;
+  /** Null when nothing is cached and the caller did not opt into fetching. */
+  report: XrayTeardown | null;
   fromCache: boolean;
+  /** True when showing this teardown would cost a billed AppBird request. */
+  needsFetch: boolean;
 }
 
 export interface XrayPopularityResult {

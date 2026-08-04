@@ -986,6 +986,12 @@ export async function resolveXrayIntegrationApps(
 /**
  * One app's full teardown, cached in `xrayTeardowns`. Teardowns are immutable for
  * a given report, so a cache hit only re-fetches when the report id changed.
+ *
+ * A teardown is the most expensive request AppBird sells (500 credits), so fetching
+ * one is opt-in: pass `cachedOnly` to answer purely from Firestore and report
+ * `needsFetch` instead of spending. The UI opens a game with `cachedOnly`, so
+ * clicking a row — or misclicking one — never costs anything; only the explicit
+ * fetch control omits the flag.
  */
 export async function getXrayTeardown(
   db: Firestore,
@@ -995,9 +1001,11 @@ export async function getXrayTeardown(
     store?: string;
     expectedReportId?: string;
     refresh?: boolean;
+    /** Answer from cache only. Never calls AppBird; sets `needsFetch` on a miss. */
+    cachedOnly?: boolean;
     onAttempt?: (endpoint: string) => void;
   } = {},
-): Promise<{ report: XrayReport; fromCache: boolean }> {
+): Promise<{ report: XrayReport | null; fromCache: boolean; needsFetch: boolean }> {
   const ref = db.collection(TEARDOWNS_COLLECTION).doc(xrayDocId(opts.store ?? 'AppStore', storeId));
 
   if (!opts.refresh) {
@@ -1005,11 +1013,16 @@ export async function getXrayTeardown(
       const snap = await ref.get();
       const cached = snap.data()?.report as XrayReport | undefined;
       if (cached && (!opts.expectedReportId || cached.reportId === opts.expectedReportId)) {
-        return { report: cached, fromCache: true };
+        return { report: cached, fromCache: true, needsFetch: false };
       }
     } catch (err) {
       console.warn(`xrayTeardowns cache read failed for ${storeId}:`, err);
     }
+  }
+
+  // Nothing usable cached, and the caller has not opted into paying for it.
+  if (opts.cachedOnly) {
+    return { report: null, fromCache: false, needsFetch: true };
   }
 
   // A teardown is the single most expensive request AppBird sells (500 credits), so
@@ -1027,5 +1040,5 @@ export async function getXrayTeardown(
   } catch (err) {
     console.warn(`xrayTeardowns cache write failed for ${storeId}:`, err);
   }
-  return { report, fromCache: false };
+  return { report, fromCache: false, needsFetch: false };
 }

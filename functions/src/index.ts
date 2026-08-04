@@ -844,7 +844,10 @@ export const compAnalysisApi = onRequest(
         case 'xray/report': {
           // Full teardown for one app. `store` and `expectedReportId` come from the
           // report row the user clicked, so a stale cache entry is refetched.
-          const { storeId, store, expectedReportId, refresh } = req.body || {};
+          // `cachedOnly` answers from Firestore and never calls AppBird, so opening a
+          // game costs nothing; fetching the teardown (500 credits) is a separate,
+          // explicit action in the UI.
+          const { storeId, store, expectedReportId, refresh, cachedOnly } = req.body || {};
           if (!storeId || typeof storeId !== 'string') {
             return sendError(res, 400, 'storeId (string) is required');
           }
@@ -855,6 +858,7 @@ export const compAnalysisApi = onRequest(
               store: typeof store === 'string' ? store : undefined,
               expectedReportId: typeof expectedReportId === 'string' ? expectedReportId : undefined,
               refresh: refresh === true,
+              cachedOnly: cachedOnly === true,
               onAttempt,
             }),
           );

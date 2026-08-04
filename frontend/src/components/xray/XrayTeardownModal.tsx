@@ -126,13 +126,28 @@ function TeardownDialog({
   const [teardown, setTeardown] = useState<XrayTeardown | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  /** Cache miss: showing the teardown would cost a billed request, so we ask first. */
+  const [needsFetch, setNeedsFetch] = useState(false);
+  const [fetching, setFetching] = useState(false);
 
+  /**
+   * Opening a game reads cache ONLY — no AppBird call, so a click (or a misclick)
+   * never spends. On a miss this sets `needsFetch` and the dialog offers the fetch as
+   * an explicit action.
+   */
   useEffect(() => {
     let cancelled = false;
     void api
-      .xrayReport({ storeId: row.storeId, store: row.store, expectedReportId: row.reportId })
+      .xrayReport({
+        storeId: row.storeId,
+        store: row.store,
+        expectedReportId: row.reportId,
+        cachedOnly: true,
+      })
       .then((res) => {
-        if (!cancelled) setTeardown(res.report);
+        if (cancelled) return;
+        setTeardown(res.report);
+        setNeedsFetch(res.needsFetch);
       })
       .catch((err: unknown) => {
         if (!cancelled) setError(err instanceof Error ? err.message : 'Failed to load teardown');
@@ -144,6 +159,25 @@ function TeardownDialog({
       cancelled = true;
     };
   }, [row.storeId, row.store, row.reportId]);
+
+  /** The only path that spends credits, and only from a direct click. */
+  async function fetchTeardown() {
+    setFetching(true);
+    setError(null);
+    try {
+      const res = await api.xrayReport({
+        storeId: row.storeId,
+        store: row.store,
+        expectedReportId: row.reportId,
+      });
+      setTeardown(res.report);
+      setNeedsFetch(res.needsFetch);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to fetch teardown');
+    } finally {
+      setFetching(false);
+    }
+  }
 
   const c = teardown?.content;
   const fp = c?.developerFingerprint;
@@ -243,6 +277,30 @@ function TeardownDialog({
           <div className={`${CARD} p-10 text-center text-[13px] text-[#5f6368]`}>Loading teardown…</div>
         )}
         {error && <div className={`${CARD} p-10 text-center text-[13px] text-[#c5221f]`}>{error}</div>}
+
+        {/* Opt-in: nothing has been fetched for this app yet, and doing so is the most
+            expensive request AppBird sells — so it takes a deliberate click. The
+            summary above (engine, mediator, SDK counts) is already on the row and
+            needs no fetch. */}
+        {!loading && needsFetch && !error && (
+          <div className={`${CARD} space-y-3 p-8 text-center`}>
+            <p className="text-[13px] text-[#3c4043]">
+              The full teardown for this app hasn’t been fetched yet.
+            </p>
+            <p className="text-[12px] text-[#9aa0a6]">
+              Fetching it uses 500 AppBird credits. It is then cached, so opening this app again
+              is free.
+            </p>
+            <button
+              type="button"
+              onClick={() => void fetchTeardown()}
+              disabled={fetching}
+              className="h-9 rounded-lg bg-[#202124] px-4 text-[12px] font-medium text-white hover:bg-[#3c4043] disabled:opacity-50"
+            >
+              {fetching ? 'Fetching teardown…' : 'Fetch teardown (500 credits)'}
+            </button>
+          </div>
+        )}
 
         {c && (
           <>
