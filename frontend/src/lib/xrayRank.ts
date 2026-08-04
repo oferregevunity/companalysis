@@ -20,6 +20,20 @@ export interface XrayFilters {
   minSdkCount: number;
   /** Only rows whose popularity has been back-filled. */
   enrichedOnly: boolean;
+  /**
+   * `rowKey` values of the apps shipping the selected integration, or null for no
+   * integration filter.
+   *
+   * Unlike the other filters this one cannot be derived from a row: X-Ray's report
+   * rows carry no per-SDK data, so membership comes from a server-side filtered
+   * query (`api.xrayIntegrationApps`) and is intersected here.
+   */
+  integrationKeys: Set<string> | null;
+}
+
+/** Identity of a row across both stores — the join key membership is expressed in. */
+export function rowKey(row: Pick<XrayReportRow, 'store' | 'storeId'>): string {
+  return `${row.store}:${row.storeId}`;
 }
 
 /** The facet key a row falls under for the given dimension. */
@@ -93,6 +107,7 @@ export function filterAndSortRows(
 ): XrayReportRow[] {
   const term = filters.search.trim().toLowerCase();
   const out = rows.filter((r) => {
+    if (filters.integrationKeys && !filters.integrationKeys.has(rowKey(r))) return false;
     if (filters.facetKey && facetKeyOf(r, filters.dimension) !== filters.facetKey) return false;
     if (filters.store !== 'all' && r.store !== filters.store) return false;
     if (filters.minSdkCount > 0 && r.sdkCount < filters.minSdkCount) return false;

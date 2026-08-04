@@ -127,3 +127,41 @@ export interface XrayPopularityResult {
   errors: string[];
   remaining: number;
 }
+
+/**
+ * One value accepted by the report list's `integration` filter. Mirrors
+ * `XrayIntegration` in `functions/src/appbird/xrayClient.ts`.
+ */
+export interface XrayIntegration {
+  value: string;
+  label: string;
+  category: string | null;
+  appCount: number | null;
+}
+
+export interface XrayIntegrationsResult {
+  integrations: XrayIntegration[];
+  fromCache: boolean;
+  fetchedAt: string | null;
+  /** True when AppBird failed and this is a fallback to an expired cache. */
+  stale: boolean;
+}
+
+export interface XrayIntegrationApp {
+  store: string;
+  storeId: string;
+}
+
+export interface XrayIntegrationAppsResult {
+  integration: string;
+  apps: XrayIntegrationApp[];
+  /** True membership size, which can exceed `apps.length` when `partial`. */
+  total: number;
+  /** `apps` is a capped prefix of `total`; completing it costs more requests. */
+  partial: boolean;
+  fromCache: boolean;
+  fetchedAt: string | null;
+  refreshReason: string | null;
+  pages: number;
+  written: number;
+}

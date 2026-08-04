@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { Timestamp } from 'firebase-admin/firestore';
 import { planCrawl, shiftDate } from './fetchXray';
-import { CallMeter, endpointFamily, usageMonthKey } from './usage';
+import { CallMeter, endpointCredits, endpointFamily, usageMonthKey } from './usage';
 
 /**
  * Guards on the pieces that decide how much AppBird quota a run may spend. X-Ray
@@ -77,6 +77,34 @@ describe('endpointFamily', () => {
   });
 });
 
+/**
+ * Pricing is what makes the budget gate meaningful: a full crawl is 24 requests but
+ * ~3,600 credits, and a request counter cannot tell those apart.
+ */
+describe('endpointCredits', () => {
+  it('prices the report list and the teardown differently despite one family', () => {
+    // endpointFamily deliberately collapses these two; pricing must not.
+    expect(endpointFamily('/v1/xray-reports')).toBe(endpointFamily('/v1/xray-reports/4772129'));
+    expect(endpointCredits('/v1/xray-reports')).toBe(150);
+    expect(endpointCredits('/v1/xray-reports/4772129')).toBe(500);
+  });
+
+  it('prices the integration vocabulary as the cheap lookup it is', () => {
+    expect(endpointCredits('/v1/xray-integrations')).toBe(5);
+  });
+
+  it('leaves non-X-Ray endpoints unpriced, since they draw on another quota', () => {
+    expect(endpointCredits('/v1/apps/6758342097')).toBeNull();
+    expect(endpointCredits('/v1/developers/123')).toBeNull();
+    expect(endpointCredits('/')).toBeNull();
+  });
+
+  it('prices a full crawl at the number that alarmed us, not the request count', () => {
+    const pages = 24;
+    expect(pages * (endpointCredits('/v1/xray-reports') ?? 0)).toBe(3600);
+  });
+});
+
 describe('CallMeter', () => {
   it('counts every attempt, including retries, per family', () => {
     const meter = new CallMeter();
@@ -85,6 +113,17 @@ describe('CallMeter', () => {
     meter.countAttempt('/v1/apps/123');
     expect(meter.total).toBe(3);
     expect(meter.byEndpoint()).toEqual({ 'xray-reports': 2, apps: 1 });
+  });
+
+  it('accumulates weighted credits alongside the request count', () => {
+    const meter = new CallMeter();
+    meter.countAttempt('/v1/xray-reports');
+    meter.countAttempt('/v1/xray-reports/4772129');
+    meter.countAttempt('/v1/xray-integrations');
+    // Unpriced: on the other quota, so it moves `total` but not credits.
+    meter.countAttempt('/v1/apps/123');
+    expect(meter.total).toBe(4);
+    expect(meter.xrayCredits).toBe(150 + 500 + 5);
   });
 
   it('flushing an empty meter touches nothing', async () => {

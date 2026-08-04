@@ -3,8 +3,17 @@ import * as admin from 'firebase-admin';
 import type { Firestore } from 'firebase-admin/firestore';
 import { getAppDetails } from './fetchApp';
 import { AppbirdQuotaError } from './http';
-import { CallMeter, checkBudget, type BudgetStatus } from './usage';
-import { getAllXrayReports, getXrayReport, type XrayReport, type XrayReportSummary } from './xrayClient';
+import { CallMeter, checkBudget, XRAY_ENDPOINT_CREDITS, type BudgetStatus } from './usage';
+import {
+  getAllXrayReports,
+  getXrayIntegrations,
+  getXrayReport,
+  getXrayReports,
+  XRAY_MAX_LIMIT,
+  type XrayIntegration,
+  type XrayReport,
+  type XrayReportSummary,
+} from './xrayClient';
 import { buildFacets, reportFacets, type XrayReportFacets } from './xrayFacets';
 
 /**
@@ -57,6 +66,15 @@ const DEFAULT_TIME_BUDGET_MS = 7 * 60 * 1000;
 /** Sync bookkeeping: `xrayFacets/syncState`. */
 const SYNC_STATE_DOC = 'syncState';
 
+/** Cached integration vocabulary: `xrayFacets/integrations`. */
+const INTEGRATIONS_DOC = 'integrations';
+
+/**
+ * The integration list is a slow-moving reference vocabulary (new SDKs appear, they
+ * don't churn), so a week-old copy is fine and costs nothing to serve.
+ */
+const INTEGRATIONS_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+
 interface XraySyncState {
   /** Newest `teardownDate` seen, YYYY-MM-DD. */
   lastTeardownDate: string | null;
@@ -96,6 +114,101 @@ export function planCrawl(
     teardownDateFrom: shiftDate(state.lastTeardownDate, INCREMENTAL_OVERLAP_DAYS),
     reason: `incremental from ${shiftDate(state.lastTeardownDate, INCREMENTAL_OVERLAP_DAYS)}`,
   };
+}
+
+/** Per-integration app membership: `xrayIntegrationApps/{hash}`. */
+const INTEGRATION_APPS_COLLECTION = 'xrayIntegrationApps';
+
+/**
+ * Backstop re-resolve interval. Corpus growth is detected exactly (see
+ * `planIntegrationRefresh`), so this only exists to catch what growth detection
+ * cannot: a teardown *edited* in place, or an app that DROPPED the integration —
+ * a removal is invisible to an incremental union, so membership has to be rebuilt
+ * from scratch occasionally.
+ */
+const INTEGRATION_APPS_TTL_MS = 14 * 24 * 60 * 60 * 1000;
+
+/**
+ * Pages a first resolve will spend without being asked twice. Each page is one
+ * billed request for 50 apps, so this is the real cost dial.
+ *
+ * Deliberately low: a broad SDK (an analytics or crash library present in most of
+ * the corpus) would otherwise page through the entire ~1200-app corpus on one
+ * click. A membership that broad also carries little signal — "most games ship it"
+ * — so the default is to return the first pages plus the true `total` and let the
+ * caller opt into completing it via `fetchAll`.
+ */
+const INTEGRATION_AUTO_PAGES = 3;
+
+/** Hard runaway guard: enough for the whole corpus. Only reachable with `fetchAll`. */
+const INTEGRATION_MAX_PAGES = 24;
+
+/** One member app. Enough to join against `xrayReports`, which is keyed on both. */
+export interface XrayIntegrationApp {
+  store: string;
+  storeId: string;
+}
+
+/** The cached membership, as stored. */
+interface XrayIntegrationAppsCache {
+  integration: string;
+  apps: XrayIntegrationApp[];
+  total: number;
+  partial: boolean;
+  fetchedAt: string;
+  /**
+   * `syncState.lastTeardownDate` when this membership was built. Growth past this
+   * date is what makes the entry stale, and doubles as the `teardownDateFrom` for
+   * an incremental top-up.
+   */
+  corpusTeardownDate: string | null;
+}
+
+export type XrayIntegrationRefreshAction = 'serve' | 'incremental' | 'full';
+
+/**
+ * Decide how to answer a membership request. Pure so the cost policy is testable
+ * without touching Firestore or AppBird.
+ *
+ * The point is that a stale entry rarely needs a full re-resolve. Membership only
+ * gains apps when new teardowns land, so when the corpus has merely advanced, the
+ * new members can be fetched with the same `integration` filter plus
+ * `teardownDateFrom` — usually a single page — and unioned into what is already
+ * cached. Full rebuilds are reserved for the cases a union cannot express.
+ */
+export function planIntegrationRefresh(
+  cached: Pick<XrayIntegrationAppsCache, 'fetchedAt' | 'partial' | 'corpusTeardownDate'> | null,
+  corpusTeardownDate: string | null,
+  opts: { refresh?: boolean; fetchAll?: boolean; now?: Date } = {},
+): { action: XrayIntegrationRefreshAction; reason: string; teardownDateFrom?: string } {
+  const now = opts.now ?? new Date();
+  if (!cached) return { action: 'full', reason: 'no cached membership' };
+  if (opts.refresh) return { action: 'full', reason: 'refresh requested' };
+
+  // A partial entry is only completed when the caller explicitly asks; otherwise it
+  // is served as-is, since re-resolving would spend the pages the cap just avoided.
+  if (cached.partial && opts.fetchAll) return { action: 'full', reason: 'completing a partial membership' };
+
+  const age = now.getTime() - new Date(cached.fetchedAt).getTime();
+  if (!Number.isFinite(age) || age >= INTEGRATION_APPS_TTL_MS) {
+    return { action: 'full', reason: `cached ${Math.round(age / 86400000)}d ago, past the re-resolve interval` };
+  }
+
+  // Corpus advanced: top up with only the teardowns added since, then union.
+  if (corpusTeardownDate && corpusTeardownDate !== cached.corpusTeardownDate) {
+    const from = cached.corpusTeardownDate
+      ? shiftDate(cached.corpusTeardownDate, INCREMENTAL_OVERLAP_DAYS)
+      : undefined;
+    // Without a stamped date there is no safe lower bound, so rebuild instead.
+    if (!from) return { action: 'full', reason: 'cached before corpus dates were tracked' };
+    return {
+      action: 'incremental',
+      reason: `corpus advanced to ${corpusTeardownDate}, topping up from ${from}`,
+      teardownDateFrom: from,
+    };
+  }
+
+  return { action: 'serve', reason: 'cached membership is current' };
 }
 
 /** Popularity is comparable across stores via rating count; installs are Play-only. */
@@ -148,8 +261,13 @@ export async function upsertXrayReports(
      * Rows to compute the facet leaderboards from. Pass the full corpus when you
      * have it; pass `'firestore'` after a partial write to rebuild from every
      * stored row (Firestore reads, no AppBird quota).
+     *
+     * `'skip'` leaves the stored leaderboards untouched — for interactive writes of
+     * a narrow slice, where a rebuild would either clobber the global leaderboards
+     * (if computed from the slice) or read the whole collection on every click.
+     * The weekly full crawl reconciles them.
      */
-    rebuildFacetsFrom?: XrayReportSummary[] | 'firestore';
+    rebuildFacetsFrom?: XrayReportSummary[] | 'firestore' | 'skip';
   } = {},
 ): Promise<{ written: number }> {
   const col = db.collection(REPORTS_COLLECTION);
@@ -173,7 +291,9 @@ export async function upsertXrayReports(
   }
 
   const source = opts.rebuildFacetsFrom ?? reports;
-  await writeFacets(db, source === 'firestore' ? await readAllStoredReports(db) : source);
+  if (source !== 'skip') {
+    await writeFacets(db, source === 'firestore' ? await readAllStoredReports(db) : source);
+  }
   return { written };
 }
 
@@ -235,13 +355,14 @@ async function readSyncState(db: Firestore): Promise<XraySyncState> {
 export async function syncXrayReports(
   db: Firestore,
   apiKey: string,
-  opts: { fullCrawl?: boolean; onAttempt?: (endpoint: string) => void } = {},
+  opts: { fullCrawl?: boolean; maxPages?: number; onAttempt?: (endpoint: string) => void } = {},
 ): Promise<{ total: number; pages: number; written: number; full: boolean; reason: string }> {
   const state = await readSyncState(db);
   const plan = planCrawl(state, { force: opts.fullCrawl });
 
   const { reports, total, pages } = await getAllXrayReports(apiKey, {
     teardownDateFrom: plan.teardownDateFrom,
+    maxPages: opts.maxPages,
     onAttempt: opts.onAttempt,
   });
 
@@ -472,9 +593,14 @@ export async function runXraySync(
   const usage = await checkBudget(db);
   if (usage.exhausted && !opts.ignoreMonthlyBudget) {
     const reason =
-      `AppBird monthly budget spent for ${usage.month} (${usage.used}/${usage.budget} calls). ` +
-      'Skipping this run so interactive requests keep working. Raise DEFAULT_MONTHLY_BUDGET or ' +
-      'pass ignoreMonthlyBudget to override.';
+      usage.exhaustedBy === 'credits'
+        ? `AppBird X-Ray credit budget spent for ${usage.month} ` +
+          `(${usage.xrayCreditsUsed}/${usage.xrayCreditsBudget} credits). Skipping this run so ` +
+          'interactive requests keep working. Raise DEFAULT_MONTHLY_XRAY_CREDITS or pass ' +
+          'ignoreMonthlyBudget to override.'
+        : `AppBird monthly budget spent for ${usage.month} (${usage.used}/${usage.budget} calls). ` +
+          'Skipping this run so interactive requests keep working. Raise DEFAULT_MONTHLY_BUDGET or ' +
+          'pass ignoreMonthlyBudget to override.';
     console.warn(`xray sync skipped: ${reason}`);
     return {
       total: 0,
@@ -495,8 +621,19 @@ export async function runXraySync(
   // Leave a slice of the remaining monthly allowance for interactive use.
   const runCallBudget = opts.callBudget ?? Math.max(Math.floor(usage.remaining * 0.5), 25);
 
+  /**
+   * Cap the crawl by what the credit budget can actually afford. A full crawl is
+   * ~24 pages at 150 each, so without this a single run could spend the month's
+   * X-Ray allowance in one go and starve interactive teardowns.
+   */
+  const affordablePages = Math.floor(usage.xrayCreditsRemaining / (XRAY_ENDPOINT_CREDITS['xray-reports'] ?? 150));
+
   try {
-    const sync = await syncXrayReports(db, apiKey, { fullCrawl: opts.fullCrawl, onAttempt: meter.countAttempt });
+    const sync = await syncXrayReports(db, apiKey, {
+      fullCrawl: opts.fullCrawl,
+      maxPages: Math.max(affordablePages, 1),
+      onAttempt: meter.countAttempt,
+    });
 
     // `enrichLimit: 0` means crawl only — a fast first population, and it also
     // keeps a 0 from reaching Firestore's limit(), which rejects it.
@@ -574,6 +711,225 @@ export async function getXrayStatus(db: Firestore): Promise<{
     popularityCursor: state.popularityCursor,
     nextCrawl: planCrawl(state),
     monthlyUsage: usage,
+  };
+}
+
+/**
+ * The integration vocabulary, cached in `xrayFacets/integrations`.
+ *
+ * Cheapest call on the X-Ray surface, but still worth caching: the page would
+ * otherwise re-fetch a list that barely changes on every load. A fetch failure
+ * falls back to the stale cache when there is one — a week-old vocabulary is far
+ * better than an empty filter rail, and this list is reference data, not a metric.
+ */
+export async function listXrayIntegrations(
+  db: Firestore,
+  apiKey: string,
+  opts: { refresh?: boolean; onAttempt?: (endpoint: string) => void } = {},
+): Promise<{ integrations: XrayIntegration[]; fromCache: boolean; fetchedAt: string | null; stale: boolean }> {
+  const ref = db.collection(FACETS_COLLECTION).doc(INTEGRATIONS_DOC);
+
+  let cached: { integrations: XrayIntegration[]; fetchedAt: string } | null = null;
+  try {
+    const data = (await ref.get()).data();
+    const rows = data?.integrations;
+    const fetchedAt = data?.fetchedAt;
+    if (Array.isArray(rows) && typeof fetchedAt === 'string') {
+      cached = { integrations: rows as XrayIntegration[], fetchedAt };
+    }
+  } catch (err) {
+    console.warn('xray integrations cache read failed:', err);
+  }
+
+  const fresh = cached && Date.now() - new Date(cached.fetchedAt).getTime() < INTEGRATIONS_TTL_MS;
+  if (cached && fresh && !opts.refresh) {
+    return { integrations: cached.integrations, fromCache: true, fetchedAt: cached.fetchedAt, stale: false };
+  }
+
+  try {
+    const { integrations } = await getXrayIntegrations(apiKey, { onAttempt: opts.onAttempt });
+    const fetchedAt = new Date().toISOString();
+    try {
+      await ref.set({ integrations, fetchedAt, updatedAt: admin.firestore.FieldValue.serverTimestamp() });
+    } catch (err) {
+      console.warn('xray integrations cache write failed:', err);
+    }
+    return { integrations, fromCache: false, fetchedAt, stale: false };
+  } catch (err) {
+    if (cached) {
+      console.warn('xray integrations fetch failed, serving stale cache:', err);
+      return { integrations: cached.integrations, fromCache: true, fetchedAt: cached.fetchedAt, stale: true };
+    }
+    throw err;
+  }
+}
+
+export interface XrayIntegrationAppsResult {
+  integration: string;
+  apps: XrayIntegrationApp[];
+  /** `meta.total` AppBird reported for the filter — the true membership size. */
+  total: number;
+  /** True when `apps` is a prefix of `total` because the page cap stopped paging. */
+  partial: boolean;
+  fromCache: boolean;
+  fetchedAt: string | null;
+  /** What the planner decided and why. Null on a plain cache hit. */
+  refreshReason: string | null;
+  /** Billed report pages this call spent. 0 on a cache hit. */
+  pages: number;
+  /** Rows upserted into `xrayReports` from the response we already paid for. */
+  written: number;
+}
+
+/**
+ * Which apps ship one integration, cached in `xrayIntegrationApps`.
+ *
+ * X-Ray's report rows carry no integration data (only `sdkCount` /
+ * `adNetworkCount` totals), so this cannot be derived from the stored corpus — it
+ * needs the server-side `integration` filter, billed per page. The cost policy:
+ *
+ * - A repeat request is free: served from Firestore, no AppBird call.
+ * - A first resolve pages up to `INTEGRATION_AUTO_PAGES`, then reports `partial`
+ *   with the true `total` rather than paging through the whole corpus for a broad
+ *   SDK. `fetchAll` completes it when someone actually wants that.
+ * - A refresh after corpus growth is incremental — one filtered page of new
+ *   teardowns unioned into the cached set, not a re-resolve.
+ * - Fetched rows are upserted into `xrayReports`, so a filtered query also
+ *   backfills any app the crawl hasn't seen. Facets are left alone (`'skip'`):
+ *   rebuilding per click would either clobber the global leaderboards or read the
+ *   whole collection, and the weekly full crawl reconciles them anyway.
+ */
+export async function resolveXrayIntegrationApps(
+  db: Firestore,
+  integration: string,
+  apiKey: string,
+  opts: {
+    refresh?: boolean;
+    /** Page past `INTEGRATION_AUTO_PAGES` up to the whole corpus. Costly — opt-in. */
+    fetchAll?: boolean;
+    onAttempt?: (endpoint: string) => void;
+  } = {},
+): Promise<XrayIntegrationAppsResult> {
+  const value = integration.trim();
+  if (!value) throw new Error('integration must be a non-empty string');
+
+  const ref = db.collection(INTEGRATION_APPS_COLLECTION).doc(xrayDocId('integration', value));
+
+  let cached: XrayIntegrationAppsCache | null = null;
+  try {
+    const data = (await ref.get()).data() as XrayIntegrationAppsCache | undefined;
+    if (data && Array.isArray(data.apps) && typeof data.fetchedAt === 'string') cached = data;
+  } catch (err) {
+    console.warn(`xrayIntegrationApps cache read failed for ${value}:`, err);
+  }
+
+  const corpusTeardownDate = (await readSyncState(db)).lastTeardownDate;
+  const plan = planIntegrationRefresh(cached, corpusTeardownDate, {
+    refresh: opts.refresh,
+    fetchAll: opts.fetchAll,
+  });
+
+  if (plan.action === 'serve' && cached) {
+    return {
+      integration: value,
+      apps: cached.apps,
+      total: cached.total,
+      partial: cached.partial,
+      fromCache: true,
+      fetchedAt: cached.fetchedAt,
+      refreshReason: null,
+      pages: 0,
+      written: 0,
+    };
+  }
+
+  /**
+   * An incremental top-up is already narrowed by `teardownDateFrom` to a few days,
+   * so it is normally one page — it gets the high ceiling only as a safety valve for
+   * a week when many teardowns landed at once, not as licence to crawl.
+   */
+  const maxPages =
+    plan.action === 'incremental' || opts.fetchAll ? INTEGRATION_MAX_PAGES : INTEGRATION_AUTO_PAGES;
+
+  const fetched: XrayReportSummary[] = [];
+  let cursor: string | null = null;
+  let total = 0;
+  let pages = 0;
+
+  while (pages < maxPages) {
+    const page = await getXrayReports(apiKey, {
+      integration: value,
+      teardownDateFrom: plan.teardownDateFrom,
+      limit: XRAY_MAX_LIMIT,
+      cursor,
+      onAttempt: opts.onAttempt,
+    });
+    pages++;
+    total = page.total || total;
+    fetched.push(...page.reports);
+    if (!page.nextCursor || page.reports.length === 0) break;
+    cursor = page.nextCursor;
+  }
+
+  /**
+   * An incremental top-up only ever saw the new slice, so its `meta.total` is the
+   * size of that slice, not of the membership — union first, then take the count
+   * from the union rather than the response.
+   */
+  const merged = new Map<string, XrayIntegrationApp>();
+  if (plan.action === 'incremental' && cached) {
+    for (const a of cached.apps) merged.set(`${a.store}:${a.storeId}`, a);
+  }
+  for (const r of fetched) merged.set(`${r.store}:${r.storeId}`, { store: r.store, storeId: r.storeId });
+  const apps = [...merged.values()];
+
+  const partial =
+    plan.action === 'incremental'
+      ? (cached?.partial ?? false)
+      : // Ran out of pages with more to come: the cap stopped us short.
+        pages >= maxPages && apps.length < total;
+  const membershipTotal = plan.action === 'incremental' ? Math.max(total, apps.length) : total || apps.length;
+
+  // Reuse the rows we just paid for to backfill the corpus.
+  let written = 0;
+  if (fetched.length > 0) {
+    try {
+      ({ written } = await upsertXrayReports(db, fetched, { rebuildFacetsFrom: 'skip' }));
+    } catch (err) {
+      console.warn('xrayIntegrationApps corpus backfill failed (membership still cached):', err);
+    }
+  }
+
+  const fetchedAt = new Date().toISOString();
+  const entry: XrayIntegrationAppsCache = {
+    integration: value,
+    apps,
+    total: membershipTotal,
+    partial,
+    fetchedAt,
+    corpusTeardownDate,
+  };
+  try {
+    await ref.set({ ...entry, updatedAt: admin.firestore.FieldValue.serverTimestamp() });
+  } catch (err) {
+    console.warn(`xrayIntegrationApps cache write failed for ${value}:`, err);
+  }
+
+  console.log(
+    `xray integration "${value}": ${plan.reason} — ${apps.length}/${membershipTotal} apps in ${pages} page(s)` +
+      `${partial ? ' (partial)' : ''}, ${written} rows backfilled`,
+  );
+
+  return {
+    integration: value,
+    apps,
+    total: membershipTotal,
+    partial,
+    fromCache: false,
+    fetchedAt,
+    refreshReason: plan.reason,
+    pages,
+    written,
   };
 }
 

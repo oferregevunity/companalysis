@@ -805,6 +805,42 @@ export const compAnalysisApi = onRequest(
           return sendSuccess(res, await getXrayStatus(db));
         }
 
+        case 'xray/integrations': {
+          // The SDK / ad-network vocabulary accepted by the report list's
+          // `integration` filter. Cheapest X-Ray call and cached for a week, so
+          // this is metered but not gated by the automation budget.
+          const { refresh } = req.body || {};
+          const { listXrayIntegrations } = await import('./appbird/fetchXray');
+          const { withCallMeter } = await import('./appbird/usage');
+          const result = await withCallMeter(db, (onAttempt) =>
+            listXrayIntegrations(db, appbirdApiKey.value().trim(), {
+              refresh: refresh === true,
+              onAttempt,
+            }),
+          );
+          return sendSuccess(res, result);
+        }
+
+        case 'xray/integrationApps': {
+          // Which apps ship one integration. Cached in Firestore, so a repeat pick
+          // costs no AppBird quota; a first resolve is page-capped and reports
+          // `partial` rather than paging the whole corpus for a broad SDK.
+          const { integration, fetchAll, refresh } = req.body || {};
+          if (!integration || typeof integration !== 'string') {
+            return sendError(res, 400, 'integration (string) is required');
+          }
+          const { resolveXrayIntegrationApps } = await import('./appbird/fetchXray');
+          const { withCallMeter } = await import('./appbird/usage');
+          const result = await withCallMeter(db, (onAttempt) =>
+            resolveXrayIntegrationApps(db, integration.trim(), appbirdApiKey.value().trim(), {
+              fetchAll: fetchAll === true,
+              refresh: refresh === true,
+              onAttempt,
+            }),
+          );
+          return sendSuccess(res, result);
+        }
+
         case 'xray/report': {
           // Full teardown for one app. `store` and `expectedReportId` come from the
           // report row the user clicked, so a stale cache entry is refetched.

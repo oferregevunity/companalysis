@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useXrayReports } from '../hooks/useXrayReports';
+import { useXrayIntegrations } from '../hooks/useXrayIntegrations';
 import { XrayTeardownModal } from '../components/xray/XrayTeardownModal';
 import { AppDetailModal } from '../components/transfers/AppDetailModal';
 import { compactNumber, formatCount, formatDate, relativeFromNow } from '../lib/appStoreFormat';
@@ -109,6 +110,7 @@ function Chips({ items, tone = 'neutral' }: { items: { label: string; count: num
 
 export default function SdkXray() {
   const { rows, facets, loading, error, enrich } = useXrayReports();
+  const integrations = useXrayIntegrations();
 
   const [dimension, setDimension] = useState<XrayDimension>('mediator');
   const [facetKey, setFacetKey] = useState<string | null>(null);
@@ -126,8 +128,13 @@ export default function SdkXray() {
   const buckets = facets ? facets[dimension] : [];
 
   const filtered = useMemo(
-    () => filterAndSortRows(rows, { dimension, facetKey, store, search, minSdkCount, enrichedOnly }, sort),
-    [rows, dimension, facetKey, store, search, minSdkCount, enrichedOnly, sort],
+    () =>
+      filterAndSortRows(
+        rows,
+        { dimension, facetKey, store, search, minSdkCount, enrichedOnly, integrationKeys: integrations.keys },
+        sort,
+      ),
+    [rows, dimension, facetKey, store, search, minSdkCount, enrichedOnly, integrations.keys, sort],
   );
 
   const visible = filtered.slice(0, (page + 1) * PAGE_SIZE);
@@ -280,6 +287,26 @@ export default function SdkXray() {
                 placeholder="Search game, publisher, SDK…"
                 className="h-9 w-56 rounded-lg border border-[#dadce0] px-3 text-[13px] focus:border-primary-500 focus:outline-none"
               />
+              {integrations.options.length > 0 && (
+                <select
+                  value={integrations.selected ?? ''}
+                  onChange={(e) => {
+                    setPage(0);
+                    void integrations.resolve(e.target.value || null);
+                  }}
+                  disabled={integrations.resolving}
+                  className="h-9 max-w-[220px] rounded-lg border border-[#dadce0] bg-white px-2.5 text-[13px] text-[#5f6368] focus:border-primary-500 focus:outline-none disabled:opacity-50"
+                  title="Show only games shipping a specific SDK or ad network"
+                >
+                  <option value="">Any integration</option>
+                  {integrations.options.map((i) => (
+                    <option key={i.value} value={i.value}>
+                      {i.label}
+                      {i.appCount !== null ? ` (${i.appCount})` : ''}
+                    </option>
+                  ))}
+                </select>
+              )}
               <div className="inline-flex overflow-hidden rounded-lg border border-[#dadce0]">
                 {(['all', 'AppStore', 'GooglePlay'] as const).map((s) => (
                   <button
@@ -346,6 +373,49 @@ export default function SdkXray() {
               )}
               {enrichError && <span className="text-[12px] text-[#c5221f]">{enrichError}</span>}
             </div>
+
+            {/* Integration filter status. Membership is fetched per integration and
+                cached server-side, so the state worth surfacing is whether the set is
+                complete and how fresh it is. */}
+            {integrations.resolving && (
+              <div className="text-[12px] text-[#5f6368]">Resolving integration membership…</div>
+            )}
+            {integrations.error && <div className="text-[12px] text-[#c5221f]">{integrations.error}</div>}
+            {integrations.optionsError && (
+              <div className="text-[12px] text-[#c5221f]">
+                Integration list unavailable: {integrations.optionsError}
+              </div>
+            )}
+            {!integrations.resolving && integrations.membership && (
+              <div className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-lg bg-[#f1f3f4] px-3 py-2 text-[12px] text-[#5f6368]">
+                <span className="font-medium text-[#202124]">{integrations.membership.integration}</span>
+                <span>
+                  {formatCount(integrations.membership.apps.length)} of{' '}
+                  {formatCount(integrations.membership.total)} apps
+                </span>
+                {integrations.membership.fetchedAt && (
+                  <span className="text-[#9aa0a6]">
+                    · resolved {relativeFromNow(integrations.membership.fetchedAt)}
+                    {integrations.membership.fromCache ? ' (cached)' : ''}
+                  </span>
+                )}
+                {integrations.membership.partial && (
+                  <>
+                    <span className="text-[#9aa0a6]">
+                      · capped to keep the request cost down
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => void integrations.loadAll()}
+                      className="h-7 rounded-md border border-[#dadce0] bg-white px-2 text-[11px] font-medium text-[#5f6368] hover:bg-white/60"
+                      title="Fetch the remaining pages from AppBird. Costs additional requests."
+                    >
+                      Load all {formatCount(integrations.membership.total)}
+                    </button>
+                  </>
+                )}
+              </div>
+            )}
 
             {/* Table */}
             <div className="overflow-hidden rounded-xl border border-[#dadce0] bg-white">

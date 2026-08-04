@@ -1,7 +1,12 @@
 import { auth } from './firebase';
 import type { SavedViewPayload, SavedViewVisibility } from '../types/savedView';
 import type { AppbirdAppDetails } from '../types/appbirdApp';
-import type { XrayPopularityResult, XrayTeardownResult } from '../types/xray';
+import type {
+  XrayIntegrationAppsResult,
+  XrayIntegrationsResult,
+  XrayPopularityResult,
+  XrayTeardownResult,
+} from '../types/xray';
 
 const API_BASE = '/api';
 
@@ -89,6 +94,16 @@ export const api = {
   /** Full AppBird X-Ray teardown for one app (cached per report id). */
   xrayReport: (args: { storeId: string; store?: string; expectedReportId?: string; refresh?: boolean }) =>
     apiCall<XrayTeardownResult>('xray/report', args),
+
+  /** Values accepted by the X-Ray `integration` filter (cached a week server-side). */
+  xrayIntegrations: (refresh = false) => apiCall<XrayIntegrationsResult>('xray/integrations', { refresh }),
+
+  /**
+   * Apps shipping one integration. Cached server-side, so a repeat pick is free;
+   * `fetchAll` opts into completing a `partial` result at the cost of more requests.
+   */
+  xrayIntegrationApps: (integration: string, opts: { fetchAll?: boolean; refresh?: boolean } = {}) =>
+    apiCall<XrayIntegrationAppsResult>('xray/integrationApps', { integration, ...opts }),
 
   /** Back-fill store popularity (installs/ratings) for specific X-Ray rows. */
   xrayPopularity: (storeIds: string[], force = false) =>

@@ -153,5 +153,12 @@ service cloud.firestore {
     match /xrayTeardowns/{teardownDocId} {
       allow read, write: if false;
     }
+
+    // Cached "which apps ship this integration" membership. Server-only: clients go
+    // through the `xray/integrationApps` route, which decides whether the cached set
+    // is still current and tops it up incrementally when it isn't.
+    match /xrayIntegrationApps/{integrationDocId} {
+      allow read, write: if false;
+    }
   }
 }

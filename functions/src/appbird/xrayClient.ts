@@ -15,8 +15,18 @@ import { REQUEST_DELAY_MS, buildUrl, fetchWithRetry, sleep } from './http';
  *   maxSdkCount, minAdNetworkCount, hasDashboard, hasDiff, teardownDateFrom.
  *   These do NOT: platform, publisherSdk, sdk/sdkName, adNetwork(s), q, appName,
  *   sortBy/orderBy, developerId, teardownDate.
+ * - `integration` is documented by AppBird as a supported filter but is NEWER than
+ *   our last crawl and has NOT been probe-confirmed here — and because unknown
+ *   params are ignored silently, an unsupported one looks like "no filter applied"
+ *   rather than an error. Confirm with `meta.total` before trusting a result set.
+ *   Valid values come from `GET /v1/xray-integrations` (see `getXrayIntegrations`),
+ *   which is the cheap way to enumerate them.
  * - The detail path takes a **storeId**, not a reportId:
  *   `GET /v1/xray-reports/{storeId}`.
+ *
+ * Request cost is NOT uniform across these paths (a report page and a teardown are
+ * far dearer than the integration vocabulary), so prefer the cheap endpoint when
+ * either would answer the question.
  */
 
 export const XRAY_MAX_LIMIT = 50;
@@ -116,6 +126,12 @@ export interface XrayListFilters {
   hasDashboard?: boolean;
   hasDiff?: boolean;
   teardownDateFrom?: string;
+  /**
+   * Restrict to apps shipping one integration (SDK / ad network / service). Values
+   * come from `getXrayIntegrations`. Unlike the fields above this one is not
+   * probe-confirmed — see the note in the module header before relying on it.
+   */
+  integration?: string;
 }
 
 function str(v: any): string | null {
@@ -284,6 +300,92 @@ export async function getAllXrayReports(
   }
 
   return { reports: [...byReportId.values()], total, pages };
+}
+
+/**
+ * One selectable integration from `GET /v1/xray-integrations` — the vocabulary of
+ * SDK / ad-network / service names that the report list's `integration` filter
+ * accepts.
+ *
+ * Worth preferring over deriving a vocabulary from crawled rows: this endpoint is
+ * the cheapest on the X-Ray surface, while a report page is among the dearest, and
+ * the list row carries no integration data at all (only `sdkCount` /
+ * `adNetworkCount` totals and a single `publisherSdk` string).
+ */
+export interface XrayIntegration {
+  /** What to pass as `integration` on the report list. */
+  value: string;
+  /** Display label. Equal to `value` when the API returns a flat string list. */
+  label: string;
+  /** Bucket the API assigns (e.g. ad network vs analytics). Null when absent. */
+  category: string | null;
+  /** Teardowns shipping it, when the API reports a count. Null when absent. */
+  appCount: number | null;
+}
+
+/**
+ * Coerce one integration row.
+ *
+ * The live shape is UNCONFIRMED — AppBird publishes no machine-readable spec, the
+ * docs site is unreachable from here, and this endpoint postdates our newest
+ * crawled snapshot — so this accepts both conventions seen elsewhere on the API: a
+ * flat string vocabulary, or objects whose name/count keys vary. Anything
+ * unrecognizable yields null and is dropped rather than becoming a junk facet.
+ */
+export function normalizeXrayIntegration(raw: any): XrayIntegration | null {
+  if (typeof raw === 'string') {
+    const value = raw.trim();
+    return value.length > 0 ? { value, label: value, category: null, appCount: null } : null;
+  }
+  if (!raw || typeof raw !== 'object') return null;
+
+  const label =
+    str(raw.name) ?? str(raw.label) ?? str(raw.integration) ?? str(raw.sdk) ?? str(raw.sdkName) ?? str(raw.value);
+  const value = str(raw.value) ?? str(raw.slug) ?? str(raw.id) ?? label;
+  if (!label || !value) return null;
+
+  const count = [raw.appCount, raw.reportCount, raw.appsCount, raw.count, raw.total].find(
+    (n) => typeof n === 'number' && Number.isFinite(n),
+  );
+  return {
+    value,
+    label,
+    category: str(raw.category) ?? str(raw.type) ?? str(raw.kind) ?? str(raw.group),
+    appCount: typeof count === 'number' ? count : null,
+  };
+}
+
+/**
+ * The integration vocabulary. Observed sibling endpoints wrap rows in
+ * `data` with a `meta.total`, but a bare array is also tolerated. No cursor is
+ * followed: this is a small reference list, and if it ever paginates the caller
+ * would see a short `integrations` next to a larger `total`.
+ */
+export async function getXrayIntegrations(
+  apiKey: string,
+  opts: { search?: string; limit?: number; onAttempt?: (endpoint: string) => void } = {},
+): Promise<{ integrations: XrayIntegration[]; total: number }> {
+  const { search, limit, onAttempt } = opts;
+  const url = buildUrl('xray-integrations', { search, limit });
+  await sleep(REQUEST_DELAY_MS);
+  const data = await fetchWithRetry(url, apiKey, { onAttempt });
+
+  const rows: unknown[] = Array.isArray(data)
+    ? data
+    : Array.isArray(data?.data)
+      ? data.data
+      : Array.isArray(data?.integrations)
+        ? data.integrations
+        : [];
+
+  const seen = new Set<string>();
+  const integrations = rows
+    .map(normalizeXrayIntegration)
+    .filter((i): i is XrayIntegration => i !== null)
+    // A vocabulary with duplicates would render duplicate filter chips.
+    .filter((i) => (seen.has(i.value) ? false : (seen.add(i.value), true)));
+
+  return { integrations, total: num(data?.meta?.total) || integrations.length };
 }
 
 /** Full teardown for one app. Note: the path param is the **storeId**. */
