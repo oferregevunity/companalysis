@@ -292,10 +292,14 @@ export function normalizeApp(data: any, fallbackStoreId: string): AppbirdApp {
  * GET /v1/apps/{storeId} — full store listing for one app. `storeId` is the Play
  * package name (`com.foo.bar`) or the numeric App Store id (`6758342097`).
  */
-export async function getApp(storeId: string, apiKey: string): Promise<AppbirdApp> {
+export async function getApp(
+  storeId: string,
+  apiKey: string,
+  onAttempt?: (endpoint: string) => void,
+): Promise<AppbirdApp> {
   const url = `${BASE_URL}/apps/${encodeURIComponent(storeId)}`;
   await sleep(REQUEST_DELAY_MS);
-  const data = await fetchWithRetry(url, apiKey);
+  const data = await fetchWithRetry(url, apiKey, { onAttempt });
   return normalizeApp(data, storeId);
 }
 
@@ -308,10 +312,11 @@ export async function getApp(storeId: string, apiKey: string): Promise<AppbirdAp
 export async function getDeveloper(
   developerStoreId: string,
   apiKey: string,
+  onAttempt?: (endpoint: string) => void,
 ): Promise<AppbirdDeveloperResponse> {
   const url = `${BASE_URL}/developers/${encodeURIComponent(developerStoreId)}`;
   await sleep(REQUEST_DELAY_MS);
-  const data = await fetchWithRetry(url, apiKey);
+  const data = await fetchWithRetry(url, apiKey, { onAttempt });
   const dev = data?.developer ?? {};
   return {
     developer: {

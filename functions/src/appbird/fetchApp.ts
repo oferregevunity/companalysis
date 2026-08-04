@@ -39,7 +39,17 @@ export async function getAppDetails(
   db: Firestore,
   storeId: string,
   apiKey: string,
-  opts: { refresh?: boolean } = {},
+  opts: {
+    refresh?: boolean;
+    /**
+     * How old a cached listing may be and still be served. Defaults to 24h for
+     * interactive use; background callers that only need coarse figures (install
+     * counts, rating counts) should pass a much larger value so they reuse the
+     * cache instead of spending quota on data that barely moves.
+     */
+    maxAgeMs?: number;
+    onAttempt?: (endpoint: string) => void;
+  } = {},
 ): Promise<AppDetailsResult> {
   const ref = db.collection(COLLECTION).doc(appDocId(storeId));
 
@@ -51,7 +61,7 @@ export async function getAppDetails(
       const ts = data.fetchedAt as admin.firestore.Timestamp | undefined;
       cached = { app: data.app as AppbirdApp, fetchedAt: ts ? ts.toDate().toISOString() : '' };
       const ageMs = ts ? Date.now() - ts.toMillis() : Number.POSITIVE_INFINITY;
-      if (!opts.refresh && ageMs < CACHE_TTL_MS) {
+      if (!opts.refresh && ageMs < (opts.maxAgeMs ?? CACHE_TTL_MS)) {
         return { app: cached.app, fetchedAt: cached.fetchedAt, fromCache: true };
       }
     }
@@ -61,7 +71,7 @@ export async function getAppDetails(
 
   let app: AppbirdApp;
   try {
-    app = await getApp(storeId, apiKey);
+    app = await getApp(storeId, apiKey, opts.onAttempt);
   } catch (err) {
     if (cached) {
       console.warn(`AppBird fetch failed for ${storeId}, serving stale cache:`, err);

@@ -787,12 +787,22 @@ export const compAnalysisApi = onRequest(
           // Crawl every AppBird X-Ray teardown into `xrayReports` (+ the
           // `xrayFacets/latest` leaderboards), then enrich store popularity for a
           // budgeted slice. Idempotent; the weekly job calls the same path.
-          const { enrichLimit } = req.body || {};
+          const { enrichLimit, fullCrawl, callBudget, ignoreMonthlyBudget } = req.body || {};
           const { runXraySync } = await import('./appbird/fetchXray');
           const result = await runXraySync(db, appbirdApiKey.value().trim(), {
             enrichLimit: typeof enrichLimit === 'number' ? enrichLimit : undefined,
+            fullCrawl: fullCrawl === true,
+            callBudget: typeof callBudget === 'number' ? callBudget : undefined,
+            ignoreMonthlyBudget: ignoreMonthlyBudget === true,
           });
           return sendSuccess(res, result);
+        }
+
+        case 'xray/status': {
+          // Firestore-only: shows whether a sync would do anything and how much
+          // AppBird budget this month has left. Costs no AppBird quota.
+          const { getXrayStatus } = await import('./appbird/fetchXray');
+          return sendSuccess(res, await getXrayStatus(db));
         }
 
         case 'xray/report': {
@@ -803,11 +813,15 @@ export const compAnalysisApi = onRequest(
             return sendError(res, 400, 'storeId (string) is required');
           }
           const { getXrayTeardown } = await import('./appbird/fetchXray');
-          const teardown = await getXrayTeardown(db, storeId.trim(), appbirdApiKey.value().trim(), {
-            store: typeof store === 'string' ? store : undefined,
-            expectedReportId: typeof expectedReportId === 'string' ? expectedReportId : undefined,
-            refresh: refresh === true,
-          });
+          const { withCallMeter } = await import('./appbird/usage');
+          const teardown = await withCallMeter(db, (onAttempt) =>
+            getXrayTeardown(db, storeId.trim(), appbirdApiKey.value().trim(), {
+              store: typeof store === 'string' ? store : undefined,
+              expectedReportId: typeof expectedReportId === 'string' ? expectedReportId : undefined,
+              refresh: refresh === true,
+              onAttempt,
+            }),
+          );
           return sendSuccess(res, teardown);
         }
 
@@ -823,10 +837,14 @@ export const compAnalysisApi = onRequest(
           }
           const ids = storeIds.filter((s: unknown): s is string => typeof s === 'string' && s.length > 0);
           const { enrichXrayPopularity } = await import('./appbird/fetchXray');
-          const result = await enrichXrayPopularity(db, appbirdApiKey.value().trim(), {
-            storeIds: ids,
-            force: force === true,
-          });
+          const { withCallMeter } = await import('./appbird/usage');
+          const result = await withCallMeter(db, (onAttempt) =>
+            enrichXrayPopularity(db, appbirdApiKey.value().trim(), {
+              storeIds: ids,
+              force: force === true,
+              onAttempt,
+            }),
+          );
           return sendSuccess(res, result);
         }
 

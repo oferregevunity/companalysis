@@ -232,16 +232,20 @@ export function normalizeXrayReport(raw: any, fallbackStoreId: string): XrayRepo
 /** One page of X-Ray reports. Pass `cursor` from the previous result to advance. */
 export async function getXrayReports(
   apiKey: string,
-  opts: XrayListFilters & { limit?: number; cursor?: string | null } = {},
+  opts: XrayListFilters & {
+    limit?: number;
+    cursor?: string | null;
+    onAttempt?: (endpoint: string) => void;
+  } = {},
 ): Promise<XrayListResult> {
-  const { limit, cursor, ...filters } = opts;
+  const { limit, cursor, onAttempt, ...filters } = opts;
   const url = buildUrl('xray-reports', {
     ...filters,
     limit: Math.min(limit ?? XRAY_MAX_LIMIT, XRAY_MAX_LIMIT),
     cursor: cursor ?? undefined,
   });
   await sleep(REQUEST_DELAY_MS);
-  const data = await fetchWithRetry(url, apiKey);
+  const data = await fetchWithRetry(url, apiKey, { onAttempt });
   const rows = Array.isArray(data?.data) ? data.data : [];
   return {
     reports: rows.map(normalizeXraySummary).filter((r: XrayReportSummary | null): r is XrayReportSummary => r !== null),
@@ -251,21 +255,27 @@ export async function getXrayReports(
 }
 
 /**
- * Every X-Ray report, following the cursor to exhaustion. ~24 calls for the
- * current corpus. `maxPages` is a runaway guard, not a normal limit.
+ * Every X-Ray report matching the filters, following the cursor to exhaustion.
+ * ~24 calls for the whole corpus, which is why callers should pass
+ * `teardownDateFrom` to fetch only what is new. `maxPages` is a runaway guard.
  */
 export async function getAllXrayReports(
   apiKey: string,
-  opts: XrayListFilters & { maxPages?: number } = {},
+  opts: XrayListFilters & { maxPages?: number; onAttempt?: (endpoint: string) => void } = {},
 ): Promise<{ reports: XrayReportSummary[]; total: number; pages: number }> {
-  const { maxPages = 60, ...filters } = opts;
+  const { maxPages = 60, onAttempt, ...filters } = opts;
   const byReportId = new Map<string, XrayReportSummary>();
   let cursor: string | null = null;
   let total = 0;
   let pages = 0;
 
   while (pages < maxPages) {
-    const page: XrayListResult = await getXrayReports(apiKey, { ...filters, limit: XRAY_MAX_LIMIT, cursor });
+    const page: XrayListResult = await getXrayReports(apiKey, {
+      ...filters,
+      limit: XRAY_MAX_LIMIT,
+      cursor,
+      onAttempt,
+    });
     pages++;
     total = page.total || total;
     for (const r of page.reports) byReportId.set(r.reportId, r);
@@ -277,9 +287,13 @@ export async function getAllXrayReports(
 }
 
 /** Full teardown for one app. Note: the path param is the **storeId**. */
-export async function getXrayReport(storeId: string, apiKey: string): Promise<XrayReport> {
+export async function getXrayReport(
+  storeId: string,
+  apiKey: string,
+  onAttempt?: (endpoint: string) => void,
+): Promise<XrayReport> {
   const url = buildUrl(`xray-reports/${encodeURIComponent(storeId)}`);
   await sleep(REQUEST_DELAY_MS);
-  const data = await fetchWithRetry(url, apiKey);
+  const data = await fetchWithRetry(url, apiKey, { onAttempt });
   return normalizeXrayReport(data, storeId);
 }
