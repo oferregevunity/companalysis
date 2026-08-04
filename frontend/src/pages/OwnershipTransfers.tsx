@@ -20,6 +20,16 @@ function withinRange(iso: string, time: TimeFilter): boolean {
   return !Number.isNaN(t) && t >= Date.now() - TIME_MS[time];
 }
 
+/**
+ * The direction this feed is about: a game moving INTO a publisher's hands. Only
+ * the acquiring side is checked, so developer → publisher, publisher → publisher
+ * (a label swap) and unknown → publisher all qualify. The excluded case is the
+ * reverse — a publisher handing a game off to a plain developer.
+ */
+function movedToPublisher(t: OwnershipTransfer): boolean {
+  return t.to.isPublisher === true;
+}
+
 function StoreBadge({ store }: { store: string }) {
   const isPlay = store === 'GooglePlay';
   return (
@@ -103,15 +113,18 @@ export default function OwnershipTransfers() {
   /** Store id of the app whose detail screen is open (null = closed). */
   const [openStoreId, setOpenStoreId] = useState<string | null>(null);
 
+  /** Feed base: moves into a publisher only. Every count below is relative to it. */
+  const acquisitions = useMemo(() => transfers.filter(movedToPublisher), [transfers]);
+
   const allPublishers = useMemo(() => {
     const s = new Set<string>();
-    transfers.forEach((t) => t.trackedPublishers.forEach((p) => s.add(p)));
+    acquisitions.forEach((t) => t.trackedPublishers.forEach((p) => s.add(p)));
     return [...s].sort();
-  }, [transfers]);
+  }, [acquisitions]);
 
   const filtered = useMemo(() => {
     const term = search.trim().toLowerCase();
-    return transfers.filter((t) => {
+    return acquisitions.filter((t) => {
       if (store !== 'all' && t.app.store !== store) return false;
       if (!withinRange(t.detectedAt, time)) return false;
       if (publishers.length && !t.trackedPublishers.some((p) => publishers.includes(p))) return false;
@@ -121,9 +134,12 @@ export default function OwnershipTransfers() {
       }
       return true;
     });
-  }, [transfers, search, store, time, publishers]);
+  }, [acquisitions, search, store, time, publishers]);
 
-  /** Every transfer for the open app — an app can change hands more than once. */
+  /**
+   * Every transfer for the open app — including legs the feed filters out, so the
+   * detail screen shows the app's full ownership timeline, not just the pickup.
+   */
   const openTransfers = useMemo(
     () => (openStoreId ? transfers.filter((t) => t.app.storeId === openStoreId) : []),
     [transfers, openStoreId],
@@ -140,7 +156,8 @@ export default function OwnershipTransfers() {
         <h1 className="text-[22px] font-semibold text-[#202124] tracking-[-0.01em]">Ownership Transfers</h1>
       </div>
       <p className="text-[13px] text-[#5f6368] mb-5">
-        Games moving between developers &amp; publishers across your tracked studios, newest detection first.
+        Games moving <span className="font-medium text-[#202124]">to</span> a publisher across your tracked studios —
+        handoffs back to a plain developer excluded, newest detection first.
       </p>
 
       {/* Controls */}
@@ -214,6 +231,10 @@ export default function OwnershipTransfers() {
             No transfers yet. Run the AppBird fetch (<code className="text-[12px]">ownershipTransfers/run</code>) to
             populate the feed.
           </div>
+        ) : acquisitions.length === 0 ? (
+          <div className="p-10 text-center text-[13px] text-[#5f6368]">
+            No transfers into a publisher in the feed — the {transfers.length} known transfers all moved the other way.
+          </div>
         ) : filtered.length === 0 ? (
           <div className="p-10 text-center text-[13px] text-[#5f6368]">No transfers match your filters.</div>
         ) : (
@@ -223,7 +244,8 @@ export default function OwnershipTransfers() {
 
       {!loading && !error && filtered.length > 0 && (
         <p className="mt-3 text-[12px] text-[#9aa0a6]">
-          Showing {filtered.length} of {transfers.length} recent transfers.
+          Showing {filtered.length} of {acquisitions.length} moves to a publisher ({transfers.length} transfers in the
+          feed).
         </p>
       )}
 
