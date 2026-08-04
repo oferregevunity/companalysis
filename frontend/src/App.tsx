@@ -7,6 +7,7 @@ import Settings from './pages/Settings';
 import Insights from './pages/Insights';
 import Creatives from './pages/Creatives';
 import OwnershipTransfers from './pages/OwnershipTransfers';
+import SdkXray from './pages/SdkXray';
 
 function App() {
   return (
@@ -20,6 +21,7 @@ function App() {
             <Route path="/insights" element={<Insights />} />
             <Route path="/creatives" element={<Creatives />} />
             <Route path="/transfers" element={<OwnershipTransfers />} />
+            <Route path="/sdks" element={<SdkXray />} />
           </Routes>
         </Layout>
       </AuthGuard>

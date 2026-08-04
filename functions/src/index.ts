@@ -783,6 +783,53 @@ export const compAnalysisApi = onRequest(
           return sendSuccess(res, details);
         }
 
+        case 'xray/run': {
+          // Crawl every AppBird X-Ray teardown into `xrayReports` (+ the
+          // `xrayFacets/latest` leaderboards), then enrich store popularity for a
+          // budgeted slice. Idempotent; the weekly job calls the same path.
+          const { enrichLimit } = req.body || {};
+          const { runXraySync } = await import('./appbird/fetchXray');
+          const result = await runXraySync(db, appbirdApiKey.value().trim(), {
+            enrichLimit: typeof enrichLimit === 'number' ? enrichLimit : undefined,
+          });
+          return sendSuccess(res, result);
+        }
+
+        case 'xray/report': {
+          // Full teardown for one app. `store` and `expectedReportId` come from the
+          // report row the user clicked, so a stale cache entry is refetched.
+          const { storeId, store, expectedReportId, refresh } = req.body || {};
+          if (!storeId || typeof storeId !== 'string') {
+            return sendError(res, 400, 'storeId (string) is required');
+          }
+          const { getXrayTeardown } = await import('./appbird/fetchXray');
+          const teardown = await getXrayTeardown(db, storeId.trim(), appbirdApiKey.value().trim(), {
+            store: typeof store === 'string' ? store : undefined,
+            expectedReportId: typeof expectedReportId === 'string' ? expectedReportId : undefined,
+            refresh: refresh === true,
+          });
+          return sendSuccess(res, teardown);
+        }
+
+        case 'xray/popularity': {
+          // On-demand popularity for the rows currently on screen, so a freshly
+          // synced app can be ranked without waiting for the weekly pass.
+          const { storeIds, force } = req.body || {};
+          if (!Array.isArray(storeIds) || storeIds.length === 0) {
+            return sendError(res, 400, 'storeIds (non-empty string[]) is required');
+          }
+          if (storeIds.length > 60) {
+            return sendError(res, 400, 'storeIds is limited to 60 per request');
+          }
+          const ids = storeIds.filter((s: unknown): s is string => typeof s === 'string' && s.length > 0);
+          const { enrichXrayPopularity } = await import('./appbird/fetchXray');
+          const result = await enrichXrayPopularity(db, appbirdApiKey.value().trim(), {
+            storeIds: ids,
+            force: force === true,
+          });
+          return sendSuccess(res, result);
+        }
+
         default:
           sendError(res, 404, `Unknown route: ${path}`);
       }
@@ -795,3 +842,4 @@ export const compAnalysisApi = onRequest(
 
 export { weeklyFetchApps, weeklyFetchCreatives, weeklyFetchCreativesFallback, weeklyMarketPulse } from './scheduled/weeklyFetch';
 export { weeklyOwnershipTransfers } from './scheduled/weeklyTransfers';
+export { weeklyXray } from './scheduled/weeklyXray';

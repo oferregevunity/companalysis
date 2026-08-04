@@ -1,6 +1,7 @@
 import { auth } from './firebase';
 import type { SavedViewPayload, SavedViewVisibility } from '../types/savedView';
 import type { AppbirdAppDetails } from '../types/appbirdApp';
+import type { XrayPopularityResult, XrayTeardownResult } from '../types/xray';
 
 const API_BASE = '/api';
 
@@ -84,6 +85,21 @@ export const api = {
   /** Full AppBird store listing for one app (24h server-side cache). */
   appbirdApp: (storeId: string, refresh = false) =>
     apiCall<AppbirdAppDetails>('appbird/app', { storeId, refresh }),
+
+  /** Full AppBird X-Ray teardown for one app (cached per report id). */
+  xrayReport: (args: { storeId: string; store?: string; expectedReportId?: string; refresh?: boolean }) =>
+    apiCall<XrayTeardownResult>('xray/report', args),
+
+  /** Back-fill store popularity (installs/ratings) for specific X-Ray rows. */
+  xrayPopularity: (storeIds: string[], force = false) =>
+    apiCall<XrayPopularityResult>('xray/popularity', { storeIds, force }),
+
+  /** Re-crawl the X-Ray corpus and enrich a slice of it. Normally the weekly job. */
+  xrayRun: (enrichLimit?: number) =>
+    apiCall<{ total: number; pages: number; written: number; enriched: number; remaining: number; errors: string[] }>(
+      'xray/run',
+      enrichLimit === undefined ? {} : { enrichLimit },
+    ),
 
   savedViews: {
     create: (args: {

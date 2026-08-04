@@ -134,5 +134,24 @@ service cloud.firestore {
     match /appbirdApps/{appDocId} {
       allow read, write: if false;
     }
+
+    // AppBird X-Ray SDK teardowns: one doc per app, with normalized SDK facets
+    // and store popularity. Read model for the /sdks page. Written server-side.
+    match /xrayReports/{reportDocId} {
+      allow read: if isUnityUser();
+      allow write: if false;
+    }
+
+    // Precomputed SDK / mediator / engine leaderboards (single `latest` doc).
+    match /xrayFacets/{docId} {
+      allow read: if isUnityUser();
+      allow write: if false;
+    }
+
+    // Full X-Ray teardown bodies. Server-only: clients read them through the
+    // `xray/report` route so a stale report id triggers a refetch.
+    match /xrayTeardowns/{teardownDocId} {
+      allow read, write: if false;
+    }
   }
 }

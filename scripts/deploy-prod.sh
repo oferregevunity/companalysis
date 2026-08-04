@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Deploy Competitor Analysis app to production.
-# Only deploys this app's targets (hosting, firestore, compAnalysisApi, weeklyFetchApps, weeklyFetchCreatives, weeklyOwnershipTransfers).
+# Only deploys this app's targets (hosting, firestore, compAnalysisApi, weeklyFetchApps, weeklyFetchCreatives, weeklyOwnershipTransfers, weeklyXray).
 # Does NOT delete or modify other functions in the Firebase project (e.g. asoapi).
 
 set -e
@@ -11,6 +11,6 @@ echo "Building frontend..."
 (cd frontend && npm run build)
 
 echo "Deploying to Firebase (hosting, firestore, and this app's functions only)..."
-firebase deploy --only "hosting,firestore,functions:compAnalysisApi,functions:weeklyFetchApps,functions:weeklyFetchCreatives,functions:weeklyOwnershipTransfers" "$@"
+firebase deploy --only "hosting,firestore,functions:compAnalysisApi,functions:weeklyFetchApps,functions:weeklyFetchCreatives,functions:weeklyOwnershipTransfers,functions:weeklyXray" "$@"
 
 echo "Done."

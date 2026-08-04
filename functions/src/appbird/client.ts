@@ -1,48 +1,13 @@
-import fetch from 'node-fetch';
 import { defineSecret } from 'firebase-functions/params';
+import { BASE_URL, REQUEST_DELAY_MS, fetchWithRetry, sleep } from './http';
 
 /**
- * AppBird (appbird.ai) — App Store + Google Play intelligence. We use it for the
- * ownership-transfers feed: which games moved from one developer/publisher to
- * another. Auth is an `x-api-key` header (NOT Bearer). Endpoints are per-store-id.
+ * AppBird (appbird.ai) — App Store + Google Play intelligence. Used for the
+ * ownership-transfers feed (which games moved between developers/publishers) and
+ * app store listings. Auth is an `x-api-key` header (NOT Bearer); see `http.ts`
+ * for the shared request plumbing, and `xrayClient.ts` for SDK teardowns.
  */
 export const appbirdApiKey = defineSecret('APPBIRD_API_KEY');
-
-const BASE_URL = 'https://api.appbird.ai/v1';
-const REQUEST_DELAY_MS = 150;
-const MAX_RETRIES = 3;
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-async function fetchWithRetry(
-  url: string,
-  apiKey: string,
-  retries = MAX_RETRIES,
-): Promise<any> {
-  for (let attempt = 0; attempt <= retries; attempt++) {
-    try {
-      const response = await fetch(url, { headers: { 'x-api-key': apiKey } });
-      if (response.status === 429) {
-        const backoff = Math.pow(2, attempt) * 2000;
-        console.warn(`AppBird rate limited, retrying in ${backoff}ms...`);
-        await sleep(backoff);
-        continue;
-      }
-      if (!response.ok) {
-        const body = await response.text().catch(() => '');
-        throw new Error(`AppBird API error ${response.status}: ${response.statusText} - ${body.slice(0, 300)}`);
-      }
-      return await response.json();
-    } catch (error) {
-      if (attempt === retries) throw error;
-      const backoff = Math.pow(2, attempt) * 1000;
-      console.warn(`AppBird request failed (attempt ${attempt + 1}/${retries + 1}), retrying in ${backoff}ms...`, error);
-      await sleep(backoff);
-    }
-  }
-}
 
 /** A developer as it appears on either side of a transfer (thin — no country). */
 export interface AppbirdTransferDeveloper {
