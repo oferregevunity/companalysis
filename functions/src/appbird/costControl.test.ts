@@ -43,11 +43,21 @@ describe('planCrawl', () => {
 
   it('forces a full crawl once the periodic interval has elapsed', () => {
     const stale = planCrawl(
-      { lastTeardownDate: '2026-08-03', lastFullCrawlAt: Timestamp.fromDate(new Date('2026-06-01T00:00:00Z')) },
+      { lastTeardownDate: '2026-08-03', lastFullCrawlAt: Timestamp.fromDate(new Date('2026-04-01T00:00:00Z')) },
       { now },
     );
     expect(stale.full).toBe(true);
     expect(stale.reason).toMatch(/periodic/);
+  });
+
+  it('stays incremental for a crawl inside the quarterly interval', () => {
+    // A full crawl is ~3,600 credits, so the interval is deliberately long: two
+    // months on, the weekly one-page incremental is still the right answer.
+    const recent = planCrawl(
+      { lastTeardownDate: '2026-08-03', lastFullCrawlAt: Timestamp.fromDate(new Date('2026-06-01T00:00:00Z')) },
+      { now },
+    );
+    expect(recent.full).toBe(false);
   });
 
   it('honours an explicit full-crawl request', () => {
@@ -89,19 +99,29 @@ describe('endpointCredits', () => {
     expect(endpointCredits('/v1/xray-reports/4772129')).toBe(500);
   });
 
-  it('prices the integration vocabulary as the cheap lookup it is', () => {
+  it('prices the cheap lookups at the rate reconciled against the usage dashboard', () => {
     expect(endpointCredits('/v1/xray-integrations')).toBe(5);
+    expect(endpointCredits('/v1/apps/6758342097')).toBe(5);
+    expect(endpointCredits('/v1/developers/123')).toBe(5);
+    expect(endpointCredits('/v1/search')).toBe(5);
   });
 
-  it('leaves non-X-Ray endpoints unpriced, since they draw on another quota', () => {
-    expect(endpointCredits('/v1/apps/6758342097')).toBeNull();
-    expect(endpointCredits('/v1/developers/123')).toBeNull();
-    expect(endpointCredits('/')).toBeNull();
+  it('charges something for an unrecognized path rather than treating it as free', () => {
+    expect(endpointCredits('/v1/some-new-endpoint')).toBeGreaterThan(0);
+    expect(endpointCredits('/')).toBeGreaterThan(0);
+  });
+
+  it('reproduces the observed dashboard spend, which is how these rates were set', () => {
+    // xray-reports: 128 requests, 7 failed (unbilled) → 18,150 credits.
+    expect((128 - 7) * endpointCredits('/v1/xray-reports')).toBe(18150);
+    // apps/{id}: 225 requests, 20 failed → 1,025 credits.
+    expect((225 - 20) * endpointCredits('/v1/apps/123')).toBe(1025);
+    // developers/{id}: 57 requests, none failed → 285 credits.
+    expect(57 * endpointCredits('/v1/developers/123')).toBe(285);
   });
 
   it('prices a full crawl at the number that alarmed us, not the request count', () => {
-    const pages = 24;
-    expect(pages * (endpointCredits('/v1/xray-reports') ?? 0)).toBe(3600);
+    expect(24 * endpointCredits('/v1/xray-reports')).toBe(3600);
   });
 });
 
@@ -120,10 +140,10 @@ describe('CallMeter', () => {
     meter.countAttempt('/v1/xray-reports');
     meter.countAttempt('/v1/xray-reports/4772129');
     meter.countAttempt('/v1/xray-integrations');
-    // Unpriced: on the other quota, so it moves `total` but not credits.
     meter.countAttempt('/v1/apps/123');
     expect(meter.total).toBe(4);
-    expect(meter.xrayCredits).toBe(150 + 500 + 5);
+    // 4 requests, but 660 credits — the gap this replaced a request counter for.
+    expect(meter.credits).toBe(150 + 500 + 5 + 5);
   });
 
   it('flushing an empty meter touches nothing', async () => {

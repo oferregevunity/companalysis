@@ -3,7 +3,13 @@ import * as admin from 'firebase-admin';
 import type { Firestore } from 'firebase-admin/firestore';
 import { getAppDetails } from './fetchApp';
 import { AppbirdQuotaError } from './http';
-import { CallMeter, checkBudget, XRAY_ENDPOINT_CREDITS, type BudgetStatus } from './usage';
+import {
+  assertCreditsAvailable,
+  CallMeter,
+  checkBudget,
+  ENDPOINT_CREDITS,
+  type BudgetStatus,
+} from './usage';
 import {
   getAllXrayReports,
   getXrayIntegrations,
@@ -50,8 +56,18 @@ const POPULARITY_TTL_MS = 60 * 24 * 60 * 60 * 1000;
  */
 const POPULARITY_MAX_CACHE_AGE_MS = 45 * 24 * 60 * 60 * 1000;
 
-/** Full re-crawl at most this often; in between, only new teardowns are fetched. */
-const FULL_CRAWL_INTERVAL_MS = 30 * 24 * 60 * 60 * 1000;
+/**
+ * Full re-crawl at most this often; in between, only new teardowns are fetched.
+ *
+ * A full crawl is ~24 pages at 150 credits = ~3,600, by far the largest single
+ * cost, and it exists only to pick up teardowns that were edited or backfilled
+ * rather than added. AppBird re-processes the corpus in occasional bulk waves
+ * (in one observed month, 91% of rows shared just 3 `updatedAt` dates), so a
+ * frequent timer mostly re-reads unchanged rows. Quarterly keeps the leaderboards
+ * honest at a third of the old cost; new teardowns still arrive weekly via the
+ * incremental crawl, which is one page.
+ */
+const FULL_CRAWL_INTERVAL_MS = 90 * 24 * 60 * 60 * 1000;
 
 /**
  * Overlap re-fetched on an incremental crawl. `teardownDateFrom` has day
@@ -130,15 +146,15 @@ const INTEGRATION_APPS_TTL_MS = 14 * 24 * 60 * 60 * 1000;
 
 /**
  * Pages a first resolve will spend without being asked twice. Each page is one
- * billed request for 50 apps, so this is the real cost dial.
+ * billed request (150 credits) for 50 apps, so this is the real cost dial.
  *
- * Deliberately low: a broad SDK (an analytics or crash library present in most of
- * the corpus) would otherwise page through the entire ~1200-app corpus on one
- * click. A membership that broad also carries little signal — "most games ship it"
- * — so the default is to return the first pages plus the true `total` and let the
- * caller opt into completing it via `fetchAll`.
+ * One page: a pick is 150 credits, and the top integrations run 600-780 apps
+ * (13-16 pages, ~2,400 credits) — far too much to spend on a click, and a
+ * membership that broad carries little signal anyway. The response reports the true
+ * `total` and flags `partial`, so the UI can show what completing it would cover
+ * and let someone opt in via `fetchAll`.
  */
-const INTEGRATION_AUTO_PAGES = 3;
+const INTEGRATION_AUTO_PAGES = 1;
 
 /** Hard runaway guard: enough for the whole corpus. Only reachable with `fetchAll`. */
 const INTEGRATION_MAX_PAGES = 24;
@@ -594,9 +610,9 @@ export async function runXraySync(
   if (usage.exhausted && !opts.ignoreMonthlyBudget) {
     const reason =
       usage.exhaustedBy === 'credits'
-        ? `AppBird X-Ray credit budget spent for ${usage.month} ` +
-          `(${usage.xrayCreditsUsed}/${usage.xrayCreditsBudget} credits). Skipping this run so ` +
-          'interactive requests keep working. Raise DEFAULT_MONTHLY_XRAY_CREDITS or pass ' +
+        ? `AppBird credit budget spent for ${usage.month} ` +
+          `(${usage.creditsUsed}/${usage.creditsBudget} credits). Skipping this run so ` +
+          'interactive requests keep working. Raise DEFAULT_MONTHLY_CREDITS or pass ' +
           'ignoreMonthlyBudget to override.'
         : `AppBird monthly budget spent for ${usage.month} (${usage.used}/${usage.budget} calls). ` +
           'Skipping this run so interactive requests keep working. Raise DEFAULT_MONTHLY_BUDGET or ' +
@@ -626,7 +642,7 @@ export async function runXraySync(
    * ~24 pages at 150 each, so without this a single run could spend the month's
    * X-Ray allowance in one go and starve interactive teardowns.
    */
-  const affordablePages = Math.floor(usage.xrayCreditsRemaining / (XRAY_ENDPOINT_CREDITS['xray-reports'] ?? 150));
+  const affordablePages = Math.floor(usage.creditsRemaining / (ENDPOINT_CREDITS['xray-reports'] ?? 150));
 
   try {
     const sync = await syncXrayReports(db, apiKey, {
@@ -851,6 +867,10 @@ export async function resolveXrayIntegrationApps(
   const maxPages =
     plan.action === 'incremental' || opts.fetchAll ? INTEGRATION_MAX_PAGES : INTEGRATION_AUTO_PAGES;
 
+  // About to spend: refuse if the month is gone. Checked after the cache lookup, so
+  // an already-resolved integration keeps working on an exhausted budget.
+  await assertCreditsAvailable(db);
+
   const fetched: XrayReportSummary[] = [];
   let cursor: string | null = null;
   let total = 0;
@@ -972,6 +992,10 @@ export async function getXrayTeardown(
       console.warn(`xrayTeardowns cache read failed for ${storeId}:`, err);
     }
   }
+
+  // A teardown is the single most expensive request AppBird sells (500 credits), so
+  // a cache miss must respect the month's ceiling. Cache hits above are unaffected.
+  await assertCreditsAvailable(db);
 
   const report = await getXrayReport(storeId, apiKey, opts.onAttempt);
   try {
